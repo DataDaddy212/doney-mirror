@@ -1,20 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-
-interface TodoItem {
-  id: string
-  title: string
-  completed: boolean
-  parentId: string | null
-  createdAt: number
-}
-
-interface TreeNode {
-  item: TodoItem
-  children: TreeNode[]
-  level: number
-}
+import { TodoItem, TreeNode } from '@/utils/treeUtils'
 
 interface TreeViewProps {
   nodes: TreeNode[]

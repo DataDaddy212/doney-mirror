@@ -7,21 +7,23 @@ import TreeView from '@/components/TreeView'
 import FilteredTodosList from '@/components/FilteredTodosList'
 import GoalDetailModal from '@/components/GoalDetailModal'
 import PostGoalPrompt from '@/components/PostGoalPrompt'
-
-interface TodoItem {
-  id: string
-  title: string
-  completed: boolean
-  parentId: string | null  // null means it's a top-level goal
-  createdAt: number
-}
-
-// Helper interfaces for UI components
-interface TreeNode {
-  item: TodoItem
-  children: TreeNode[]
-  level: number
-}
+import { 
+  TodoItem, 
+  TreeNode, 
+  buildTree, 
+  computeLevel, 
+  getChildren, 
+  getAncestors, 
+  getRootGoal, 
+  isRootGoal, 
+  getItemPath,
+  getItemsAtLevel,
+  getRootGoals,
+  getAllTodos,
+  getDescendants,
+  moveItem,
+  getTreeStats
+} from '@/utils/treeUtils'
 
 export default function Dashboard() {
   const [items, setItems] = useState<TodoItem[]>([])
@@ -68,50 +70,15 @@ export default function Dashboard() {
     router.push('/')
   }
 
-  // Utility functions for tree operations
-  const calculateLevel = (itemId: string, allItems: TodoItem[]): number => {
-    const item = allItems.find(i => i.id === itemId)
-    if (!item || !item.parentId) return 1
-    return 1 + calculateLevel(item.parentId, allItems)
-  }
-
-  const buildTree = (items: TodoItem[]): TreeNode[] => {
-    const itemMap = new Map<string, TreeNode>()
-    
-    // Create nodes for all items
-    items.forEach(item => {
-      itemMap.set(item.id, {
-        item,
-        children: [],
-        level: calculateLevel(item.id, items)
-      })
-    })
-
-    // Build the tree structure
-    const roots: TreeNode[] = []
-    items.forEach(item => {
-      const node = itemMap.get(item.id)!
-      if (item.parentId) {
-        const parent = itemMap.get(item.parentId)
-        if (parent) {
-          parent.children.push(node)
-        }
-      } else {
-        roots.push(node)
-      }
-    })
-
-    return roots
-  }
-
+  // Utility functions using the new tree utilities
   const getTopLevelGoals = (): TreeNode[] => {
-    return buildTree(items)
+    return buildTree(getRootGoals(items))
   }
 
   const getAllItemsFlat = () => {
     return items.map(item => ({
       ...item,
-      level: calculateLevel(item.id, items)
+      level: computeLevel(item.id, items)
     }))
   }
 
@@ -133,8 +100,17 @@ export default function Dashboard() {
 
   // CRUD operations
   const addItem = (title: string, parentId: string | null = null) => {
+    // Validate that we're not creating a cycle
+    if (parentId) {
+      const parent = items.find(item => item.id === parentId)
+      if (!parent) {
+        console.error('Parent not found:', parentId)
+        return null
+      }
+    }
+    
     const newItem: TodoItem = {
-      id: `item-${Date.now()}`,
+      id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       title,
       completed: false,
       parentId,
@@ -160,16 +136,12 @@ export default function Dashboard() {
   }
 
   const removeItem = (itemId: string) => {
-    // Remove item and all its children recursively
-    const removeRecursively = (idToRemove: string) => {
-      setItems(prev => {
-        const children = prev.filter(item => item.parentId === idToRemove)
-        children.forEach(child => removeRecursively(child.id))
-        return prev.filter(item => item.id !== idToRemove)
-      })
-    }
-    
-    removeRecursively(itemId)
+    // Remove item and all its descendants
+    setItems(prev => {
+      const descendants = getDescendants(itemId, prev)
+      const idsToRemove = new Set([itemId, ...descendants.map(d => d.id)])
+      return prev.filter(item => !idsToRemove.has(item.id))
+    })
     
     if (selectedItem?.id === itemId) {
       setSelectedItem(null)
@@ -207,8 +179,8 @@ export default function Dashboard() {
   // Post-goal creation handlers
   const handlePostGoalTodoAdd = (todoText: string) => {
     // Find the most recently created top-level goal
-    const topLevelGoals = items.filter(item => !item.parentId).sort((a, b) => b.createdAt - a.createdAt)
-    const latestGoal = topLevelGoals[0]
+    const rootGoals = getRootGoals(items).sort((a, b) => b.createdAt - a.createdAt)
+    const latestGoal = rootGoals[0]
     if (latestGoal) {
       addItem(todoText, latestGoal.id)
     }

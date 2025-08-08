@@ -1,12 +1,6 @@
 'use client'
 
-interface TodoItem {
-  id: string
-  title: string
-  completed: boolean
-  parentId: string | null
-  level: number
-}
+import { TodoItem, getRootGoals, getItemsAtLevel, getItemPath } from '@/utils/treeUtils'
 
 interface FilteredTodosListProps {
   items: TodoItem[]
@@ -34,7 +28,7 @@ export default function FilteredTodosList({
   }
 
   const getTopLevelGoals = () => {
-    return allItems.filter(item => !item.parentId)
+    return getRootGoals(allItems)
   }
 
   const getAvailableLevels = () => {
