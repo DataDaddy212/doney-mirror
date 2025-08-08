@@ -45,7 +45,7 @@ export default function PostGoalPrompt({
             You created <span className="font-semibold text-primary-600 dark:text-primary-400">&ldquo;{goalTitle}&rdquo;</span>
           </p>
           <p className="text-sm text-zinc-500">
-            Add your first to-do, or break it into steps
+            Add your first to-do to get started
           </p>
         </div>
 

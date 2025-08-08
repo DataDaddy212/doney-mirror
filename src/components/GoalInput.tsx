@@ -20,14 +20,14 @@ export default function GoalInput({ onGoalAdded }: GoalInputProps) {
 
   return (
     <div className="space-y-4">
-      <div className="text-center">
-        <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">
-          What would you like to accomplish?
-        </h2>
-        <p className="text-zinc-500">
-          Break down your biggest goals into manageable steps
-        </p>
-      </div>
+              <div className="text-center">
+          <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">
+            What would you like to accomplish?
+          </h2>
+          <p className="text-zinc-500">
+            Add a goal, then break it down into to-dos
+          </p>
+        </div>
       
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">

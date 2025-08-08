@@ -119,7 +119,7 @@ export default function TreeView({
                 }}
                 className="btn-secondary text-xs h-8"
               >
-                + Add sub-to-do
+                + Add to-do
               </button>
               <button
                 onClick={(e) => {
@@ -140,7 +140,7 @@ export default function TreeView({
                   type="text"
                   value={newSubItemText}
                   onChange={(e) => setNewSubItemText(e.target.value)}
-                  placeholder="Add a sub-to-do..."
+                  placeholder="Add a to-do..."
                   className="input-base flex-1 text-sm h-9"
                   autoFocus
                 />

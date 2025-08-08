@@ -80,19 +80,19 @@ export default function GoalDetailModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden animate-bounce-in">
+      <div className="card max-w-2xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden animate-bounce-in">
         {/* Header */}
-        <div className="p-4 sm:p-6 border-b border-gray-200">
+        <div className="p-4 sm:p-6 border-b border-zinc-200/70 dark:border-zinc-700">
           <div className="flex items-center justify-between">
             <div className="flex-1 min-w-0">
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-800 truncate">{goal.title}</h2>
-              <p className="text-sm text-gray-600 mt-1">
+              <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-zinc-100 truncate">{goal.title}</h2>
+              <p className="text-sm text-zinc-500 mt-1">
                 Manage to-dos for this goal
               </p>
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 text-2xl font-bold w-8 h-8 flex items-center justify-center ml-4 hover:bg-gray-100 rounded-full transition-all duration-200"
+              className="text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300 text-2xl font-bold w-8 h-8 flex items-center justify-center ml-4 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-all duration-200"
             >
               ×
             </button>
@@ -104,7 +104,7 @@ export default function GoalDetailModal({
           {/* Add Todo Form */}
           <div className="mb-6">
             <form onSubmit={handleAddTodo} className="space-y-3">
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
                 Add a new to-do
               </label>
               <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
@@ -113,12 +113,12 @@ export default function GoalDetailModal({
                   value={newTodoText}
                   onChange={(e) => setNewTodoText(e.target.value)}
                   placeholder="What needs to be done?"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:border-transparent touch-manipulation"
+                  className="input-base flex-1"
                 />
                 <button
                   type="submit"
                   disabled={!newTodoText.trim()}
-                  className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 active:scale-95 touch-manipulation"
+                  className="btn-primary"
                 >
                   Add
                 </button>
@@ -135,11 +135,11 @@ export default function GoalDetailModal({
 
           {/* Todos List */}
           <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-3">To-dos</h3>
+            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-3">To-dos</h3>
             {goal.todos.length === 0 ? (
               <div className="text-center py-8">
                 <div className="text-4xl mb-2">🎯</div>
-                <p className="text-gray-500">
+                <p className="text-zinc-500">
                   No to-dos yet! Add your first to-do above.
                 </p>
               </div>
@@ -152,14 +152,14 @@ export default function GoalDetailModal({
         </div>
 
         {/* Footer */}
-        <div className="p-4 sm:p-6 border-t border-gray-200 bg-gray-50">
+        <div className="p-4 sm:p-6 border-t border-zinc-200/70 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800">
           <div className="flex flex-col sm:flex-row justify-between items-center space-y-2 sm:space-y-0">
-            <div className="text-sm text-gray-600 text-center sm:text-left">
+            <div className="text-sm text-zinc-600 dark:text-zinc-300 text-center sm:text-left">
               {goal.todos.filter(t => t.completed).length} of {goal.todos.length} to-dos completed
             </div>
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all duration-200 hover:scale-105 active:scale-95 touch-manipulation"
+              className="btn-secondary"
             >
               Done
             </button>

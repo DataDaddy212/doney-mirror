@@ -35,6 +35,11 @@ export default function Dashboard() {
   const [isDarkMode, setIsDarkMode] = useState(false)
   const router = useRouter()
 
+  // TODO: AI integration - placeholder for future AI features
+  const handleAISuggestion = () => {
+    console.log('AI suggestion feature - coming soon')
+  }
+
   useEffect(() => {
     // Check if user is logged in
     const workspaceId = localStorage.getItem('workspaceId')
@@ -267,7 +272,7 @@ export default function Dashboard() {
             <div className="card-header">
               <div>
                 <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Goals</h2>
-                <p className="text-sm text-zinc-500">Organize your goals into actionable steps</p>
+                <p className="text-sm text-zinc-500">Your top-level goals with nested to-dos</p>
               </div>
             </div>
             <div className="p-4">
@@ -288,7 +293,7 @@ export default function Dashboard() {
             <div className="card-header">
               <div>
                 <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">To-Dos</h2>
-                <p className="text-sm text-zinc-500">All your to-dos in one place</p>
+                <p className="text-sm text-zinc-500">All to-dos from any level, filtered and organized</p>
               </div>
             </div>
             <div className="p-4">
