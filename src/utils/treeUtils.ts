@@ -4,6 +4,7 @@ export interface TodoItem {
   completed: boolean
   parentId: string | null  // null means it's a top-level goal
   createdAt: number
+  updatedAt?: number
 }
 
 export interface TreeNode {
@@ -102,43 +103,44 @@ export function getItemPath(itemId: string, items: TodoItem[]): string {
   if (!item) return ''
   
   const path = [...ancestors, item].map(item => item.title)
-  return path.join(' › ')
+  return path.join(' > ')
 }
 
 /**
  * Build a tree structure from flat items array
  */
 export function buildTree(items: TodoItem[]): TreeNode[] {
-  const itemMap = new Map<string, TreeNode>()
+  const itemMap = new Map<string, TodoItem>()
+  const childrenMap = new Map<string, TodoItem[]>()
   
-  // Create nodes for all items
+  // Build maps
   items.forEach(item => {
-    itemMap.set(item.id, {
-      item,
-      children: [],
-      level: computeLevel(item.id, items)
-    })
-  })
-
-  // Build the tree structure
-  const roots: TreeNode[] = []
-  items.forEach(item => {
-    const node = itemMap.get(item.id)!
+    itemMap.set(item.id, item)
     if (item.parentId) {
-      const parent = itemMap.get(item.parentId)
-      if (parent) {
-        parent.children.push(node)
-      }
-    } else {
-      roots.push(node)
+      const children = childrenMap.get(item.parentId) || []
+      children.push(item)
+      childrenMap.set(item.parentId, children)
     }
   })
-
-  return roots
+  
+  // Build tree recursively
+  function buildNode(item: TodoItem, level: number): TreeNode {
+    const children = childrenMap.get(item.id) || []
+    return {
+      item,
+      level,
+      children: children.map(child => buildNode(child, level + 1))
+    }
+  }
+  
+  // Return root nodes only
+  return items
+    .filter(item => !item.parentId)
+    .map(item => buildNode(item, 1))
 }
 
 /**
- * Get all items at a specific level
+ * Get items at a specific level
  */
 export function getItemsAtLevel(level: number, items: TodoItem[]): TodoItem[] {
   return items.filter(item => computeLevel(item.id, items) === level)
@@ -152,33 +154,32 @@ export function getRootGoals(items: TodoItem[]): TodoItem[] {
 }
 
 /**
- * Get all to-dos (Level 2+ items)
+ * Get all to-dos (non-root items)
  */
 export function getAllTodos(items: TodoItem[]): TodoItem[] {
   return items.filter(item => item.parentId !== null)
 }
 
 /**
- * Check if adding a child would create a cycle
+ * Check if moving an item would create a cycle
  */
 export function wouldCreateCycle(parentId: string, childId: string, items: TodoItem[]): boolean {
   if (parentId === childId) return true
   
-  const descendants = getDescendants(parentId, items)
-  return descendants.some(desc => desc.id === childId)
+  const parent = items.find(i => i.id === parentId)
+  if (!parent) return false
+  
+  return wouldCreateCycle(parent.parentId || '', childId, items)
 }
 
 /**
- * Get all items that can be a parent (excluding the item itself and its descendants)
+ * Get valid parent options for an item (excluding itself and descendants)
  */
 export function getValidParents(itemId: string, items: TodoItem[]): TodoItem[] {
-  const item = items.find(i => i.id === itemId)
-  if (!item) return items
-  
-  const descendants = getDescendants(itemId, items)
-  const invalidIds = new Set([itemId, ...descendants.map(d => d.id)])
-  
-  return items.filter(item => !invalidIds.has(item.id))
+  return items.filter(item => 
+    item.id !== itemId && 
+    !wouldCreateCycle(itemId, item.id, items)
+  )
 }
 
 /**
@@ -186,7 +187,7 @@ export function getValidParents(itemId: string, items: TodoItem[]): TodoItem[] {
  */
 export function moveItem(itemId: string, newParentId: string | null, items: TodoItem[]): TodoItem[] {
   if (newParentId && wouldCreateCycle(newParentId, itemId, items)) {
-    throw new Error('Cannot move item: would create a cycle')
+    return items // Don't move if it would create a cycle
   }
   
   return items.map(item => 
@@ -197,16 +198,29 @@ export function moveItem(itemId: string, newParentId: string | null, items: Todo
 }
 
 /**
- * Get the maximum depth in the tree
+ * Get the maximum depth of the tree
  */
 export function getMaxDepth(items: TodoItem[]): number {
   if (items.length === 0) return 0
   
-  return Math.max(...items.map(item => computeLevel(item.id, items)))
+  function getDepth(itemId: string, visited: Set<string> = new Set()): number {
+    if (visited.has(itemId)) return 0 // Prevent cycles
+    visited.add(itemId)
+    
+    const children = getChildren(itemId, items)
+    if (children.length === 0) return 1
+    
+    return 1 + Math.max(...children.map(child => getDepth(child.id, visited)))
+  }
+  
+  const rootItems = getRootGoals(items)
+  return rootItems.length > 0 
+    ? Math.max(...rootItems.map(item => getDepth(item.id)))
+    : 0
 }
 
 /**
- * Get statistics about the tree structure
+ * Get tree statistics
  */
 export function getTreeStats(items: TodoItem[]): {
   totalItems: number
@@ -219,10 +233,10 @@ export function getTreeStats(items: TodoItem[]): {
   const rootGoals = getRootGoals(items).length
   const todos = getAllTodos(items).length
   const maxDepth = getMaxDepth(items)
-  const averageDepth = totalItems > 0 
-    ? items.reduce((sum, item) => sum + computeLevel(item.id, items), 0) / totalItems
-    : 0
-
+  
+  const totalDepth = items.reduce((sum, item) => sum + computeLevel(item.id, items), 0)
+  const averageDepth = totalItems > 0 ? totalDepth / totalItems : 0
+  
   return {
     totalItems,
     rootGoals,
@@ -230,4 +244,110 @@ export function getTreeStats(items: TodoItem[]): {
     maxDepth,
     averageDepth
   }
+}
+
+/**
+ * Get direct progress for a parent item (direct children only)
+ */
+export function getDirectProgress(parentId: string, items: TodoItem[]): {
+  completed: number
+  total: number
+} {
+  const children = getChildren(parentId, items)
+  const completed = children.filter(child => child.completed).length
+  const total = children.length
+  
+  return { completed, total }
+}
+
+/** Determine if sourceId is a descendant of targetId */
+export function isDescendant(sourceId: string, targetId: string, items: TodoItem[]): boolean {
+  if (sourceId === targetId) return true
+  const descendants = getDescendants(targetId, items)
+  return descendants.some(d => d.id === sourceId)
+}
+
+/** Get siblings (ordered by original array order) for a given parent */
+export function getSiblings(parentId: string | null, items: TodoItem[]): TodoItem[] {
+  return items.filter(i => i.parentId === parentId)
+}
+
+/** Reorder node within its current parent to a new index (stable, reorders array) */
+export function reorderWithinParent(nodeId: string, newIndex: number, items: TodoItem[]): TodoItem[] {
+  const node = items.find(i => i.id === nodeId)
+  if (!node) return items
+  const siblings = getSiblings(node.parentId, items)
+  const currentIndexInSiblings = siblings.findIndex(s => s.id === nodeId)
+  if (currentIndexInSiblings === -1) return items
+  const siblingIds = siblings.map(s => s.id)
+  siblingIds.splice(currentIndexInSiblings, 1)
+  const boundedIndex = Math.max(0, Math.min(newIndex, siblingIds.length))
+  siblingIds.splice(boundedIndex, 0, nodeId)
+  // Rebuild items array keeping overall order but adjusting sibling relative order
+  const setSiblingOrder = new Map<string, number>(siblingIds.map((id, idx) => [id, idx]))
+  const reordered = [...items]
+  // Stable sort only siblings relative to each other by mapping order
+  reordered.sort((a, b) => {
+    const aIs = a.parentId === node.parentId && setSiblingOrder.has(a.id)
+    const bIs = b.parentId === node.parentId && setSiblingOrder.has(b.id)
+    if (aIs && bIs) return (setSiblingOrder.get(a.id)! - setSiblingOrder.get(b.id)!)
+    if (aIs) return -1
+    if (bIs) return 1
+    return 0
+  })
+  return reordered
+}
+
+/** Reparent a node to a new parent (or null) and place at position (start|end|index) */
+export function reparent(
+  nodeId: string,
+  newParentId: string | null,
+  items: TodoItem[],
+  position: 'start' | 'end' | number = 'end'
+): TodoItem[] {
+  const node = items.find(i => i.id === nodeId)
+  if (!node) return items
+  // Prevent cycles: cannot move under its own descendant
+  if (newParentId && isDescendant(newParentId, nodeId, items)) return items
+  // Update parentId
+  const updated = items.map(i => i.id === nodeId ? { ...i, parentId: newParentId, updatedAt: Date.now() } : i)
+  // Place in new sibling order
+  const siblings = getSiblings(newParentId, updated)
+  const targetIds = siblings.filter(s => s.id !== nodeId).map(s => s.id)
+  const idx = typeof position === 'number'
+    ? Math.max(0, Math.min(position, targetIds.length))
+    : (position === 'start' ? 0 : targetIds.length)
+  targetIds.splice(idx, 0, nodeId)
+  const orderMap = new Map<string, number>(targetIds.map((id, i) => [id, i]))
+  const resorted = [...updated]
+  resorted.sort((a, b) => {
+    const aIs = a.parentId === newParentId && orderMap.has(a.id)
+    const bIs = b.parentId === newParentId && orderMap.has(b.id)
+    if (aIs && bIs) return (orderMap.get(a.id)! - orderMap.get(b.id)!)
+    if (aIs) return -1
+    if (bIs) return 1
+    return 0
+  })
+  return resorted
+}
+
+/** Reorder root goals (parentId === null) by new order of ids; other items keep relative order */
+export function reorderRoots(newRootOrder: string[], items: TodoItem[]): TodoItem[] {
+  const rootSet = new Set(items.filter(i => i.parentId === null).map(i => i.id))
+  // Filter provided order to only existing root ids, and append any missing roots at end (defensive)
+  const normalized = newRootOrder.filter(id => rootSet.has(id))
+  for (const id of Array.from(rootSet)) {
+    if (!normalized.includes(id)) normalized.push(id)
+  }
+  const orderMap = new Map<string, number>(normalized.map((id, idx) => [id, idx]))
+  const reordered = [...items]
+  reordered.sort((a, b) => {
+    const aRoot = a.parentId === null
+    const bRoot = b.parentId === null
+    if (aRoot && bRoot) return (orderMap.get(a.id)! - orderMap.get(b.id)!)
+    if (aRoot) return -1
+    if (bRoot) return 1
+    return 0
+  })
+  return reordered
 }

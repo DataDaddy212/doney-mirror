@@ -1,6 +1,6 @@
 'use client'
 
-import { TodoItem, getRootGoals, getItemsAtLevel, getItemPath } from '@/utils/treeUtils'
+import { TodoItem, getRootGoals, getItemsAtLevel, getItemPath, computeLevel } from '@/utils/treeUtils'
 
 interface FilteredTodosListProps {
   items: TodoItem[]
@@ -32,7 +32,7 @@ export default function FilteredTodosList({
   }
 
   const getAvailableLevels = () => {
-    const levels = new Set(allItems.map(item => item.level))
+    const levels = new Set(allItems.map(item => computeLevel(item.id, allItems)))
     return Array.from(levels).sort()
   }
 
@@ -63,7 +63,7 @@ export default function FilteredTodosList({
           
           <optgroup label="By Level">
             {getAvailableLevels().map(level => {
-              const levelCount = allItems.filter(item => item.level === level).length
+              const levelCount = allItems.filter(item => computeLevel(item.id, allItems) === level).length
               return (
                 <option key={level} value={`level-${level}`}>
                   Level {level} ({levelCount} items)
@@ -113,7 +113,7 @@ export default function FilteredTodosList({
                     {item.title}
                   </span>
                   <span className="badge badge-neutral flex-shrink-0">
-                    Level {item.level}
+                    Level {computeLevel(item.id, allItems)}
                   </span>
                 </div>
                 <div className="text-xs text-zinc-500 mt-1 truncate">

@@ -3,57 +3,176 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import GoalInput from '@/components/GoalInput'
-import TreeView from '@/components/TreeView'
-import FilteredTodosList from '@/components/FilteredTodosList'
 import GoalDetailModal from '@/components/GoalDetailModal'
 import PostGoalPrompt from '@/components/PostGoalPrompt'
+import GoalTile from '@/components/GoalTile'
 import { 
   TodoItem, 
-  TreeNode, 
-  buildTree, 
   computeLevel, 
   getChildren, 
-  getAncestors, 
-  getRootGoal, 
-  isRootGoal, 
-  getItemPath,
-  getItemsAtLevel,
-  getRootGoals,
-  getAllTodos,
   getDescendants,
-  moveItem,
-  getTreeStats
+  reparent,
+  reorderWithinParent,
+  reorderRoots,
+  isDescendant
 } from '@/utils/treeUtils'
+import { DndContext, PointerSensor, useSensor, useSensors, DragStartEvent, DragOverEvent, DragEndEvent, DragOverlay, useDroppable } from '@dnd-kit/core'
+import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { createPortal } from 'react-dom'
+
+// Interface for goal flags
+interface GoalFlags {
+  [goalId: string]: {
+    promptCompleted?: boolean
+    promptSkipped?: boolean
+  }
+}
+
+// Small sortable wrapper for tiles
+function SortableTile({ goal, children }: { goal: TodoItem, children: (p: { setNodeRef: (el: HTMLElement|null)=>void, attributes: any, listeners: any, isDragging: boolean }) => React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `tile::${goal.id}` })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  } as React.CSSProperties
+  return (
+    <div style={style}>
+      {children({ setNodeRef, attributes, listeners, isDragging })}
+    </div>
+  )
+}
 
 export default function Dashboard() {
+  const isBrowser = typeof document !== 'undefined'
   const [items, setItems] = useState<TodoItem[]>([])
   const [workspaceName, setWorkspaceName] = useState('')
   const [selectedItem, setSelectedItem] = useState<TodoItem | null>(null)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
   const [showPostGoalPrompt, setShowPostGoalPrompt] = useState(false)
   const [newGoalTitle, setNewGoalTitle] = useState('')
+  const [newGoalId, setNewGoalId] = useState('')
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
-  const [todoFilter, setTodoFilter] = useState<'all' | string>('all') // 'all' or parentId or 'level-X'
   const [isDarkMode, setIsDarkMode] = useState(false)
+  const [showDevMenu, setShowDevMenu] = useState(false)
+  const [goalFlags, setGoalFlags] = useState<GoalFlags>({})
   const router = useRouter()
 
-  // TODO: AI integration - placeholder for future AI features
-  const handleAISuggestion = () => {
-    console.log('AI suggestion feature - coming soon')
+  const sensors = useSensors(useSensor(PointerSensor))
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [overId, setOverId] = useState<string | null>(null)
+  const [prevItemsForUndo, setPrevItemsForUndo] = useState<TodoItem[] | null>(null)
+
+  const labelFor = (id: string) => items.find(i => i.id === id.replace('tile::',''))?.title ?? id
+
+  const handleFeedDragStart = (e: DragStartEvent) => {
+    const id = String(e.active.id)
+    setActiveId(id)
+    console.log('[FEED DnD] start', { activeId: id })
+  }
+  const handleFeedDragOver = (e: DragOverEvent) => {
+    const o = e.over?.id ? String(e.over.id) : null
+    if (activeId) console.log('[FEED DnD] over', { activeId, overId: o })
+  }
+  const handleFeedDragEnd = (e: DragEndEvent) => {
+    const o = e.over?.id ? String(e.over.id) : null
+    const a = activeId
+    console.log('[FEED DnD] end', { activeId: a, overId: o })
+    if (a && o && a !== o && a.startsWith('tile::') && o.startsWith('tile::')) {
+      const roots = items.filter(i => i.parentId === null).map(i => i.id)
+      const fromId = a.replace('tile::','')
+      const toId = o.replace('tile::','')
+      const fromIdx = roots.indexOf(fromId)
+      const toIdx = roots.indexOf(toId)
+      if (fromIdx !== -1 && toIdx !== -1) {
+        const newOrder = roots.slice()
+        newOrder.splice(fromIdx, 1)
+        newOrder.splice(toIdx, 0, fromId)
+        setItems(prev => reorderRoots(newOrder, prev))
+        console.log('[FEED DnD] reorder roots', { fromId, toId })
+      }
+    }
+    setActiveId(null)
   }
 
+  const undoLastMove = () => {
+    if (prevItemsForUndo) {
+      setItems(prevItemsForUndo)
+      setPrevItemsForUndo(null)
+    }
+  }
+
+  function FeedRootDropZone() {
+    const { setNodeRef, isOver } = useDroppable({ id: 'feed::root' })
+    return <div ref={setNodeRef} className={`h-3 rounded ${isOver ? 'bg-accent-500/40' : 'bg-transparent'}`} aria-hidden />
+  }
+
+  function TileBefore({ goalId }: { goalId: string }) {
+    const { setNodeRef, isOver } = useDroppable({ id: `tile::${goalId}::before` })
+    return <div ref={setNodeRef} className={`h-1 rounded ${isOver ? 'bg-accent-500' : 'bg-transparent'}`} aria-hidden />
+  }
+  function TileInto({ goalId, children }: { goalId: string, children: React.ReactNode }) {
+    const { setNodeRef, isOver } = useDroppable({ id: `tile::${goalId}::into` })
+    return <div ref={setNodeRef} className={`${isOver ? 'outline outline-2 outline-primary-400' : ''}`}>{children}</div>
+  }
+  function TileAfter({ goalId }: { goalId: string }) {
+    const { setNodeRef, isOver } = useDroppable({ id: `tile::${goalId}::after` })
+    return <div ref={setNodeRef} className={`h-1 rounded ${isOver ? 'bg-accent-500' : 'bg-transparent'}`} aria-hidden />
+  }
+
+  // Load data from localStorage on mount
   useEffect(() => {
-    // Check if user is logged in
+    // Load items from localStorage
+    const savedItems = localStorage.getItem('doney.items')
+    if (savedItems) {
+      try {
+        const parsedItems = JSON.parse(savedItems) as TodoItem[]
+        setItems(parsedItems)
+      } catch (error) {
+        console.error('Failed to parse saved items:', error)
+        // Clear corrupted data
+        localStorage.removeItem('doney.items')
+      }
+    }
+
+    // Load goal flags from localStorage
+    const savedGoalFlags = localStorage.getItem('doney.goalFlags')
+    if (savedGoalFlags) {
+      try {
+        const parsedFlags = JSON.parse(savedGoalFlags) as GoalFlags
+        setGoalFlags(parsedFlags)
+      } catch (error) {
+        console.error('Failed to parse saved goal flags:', error)
+        localStorage.removeItem('doney.goalFlags')
+      }
+    }
+
+    // Set up default workspace if none exists
     const workspaceId = localStorage.getItem('workspaceId')
     const storedWorkspaceName = localStorage.getItem('workspaceName')
     
     if (!workspaceId) {
-      router.push('/')
-      return
+      // Create default workspace
+      const defaultWorkspaceId = 'default-workspace'
+      const defaultWorkspaceName = 'My Workspace'
+      
+      localStorage.setItem('workspaceId', defaultWorkspaceId)
+      localStorage.setItem('workspaceName', defaultWorkspaceName)
+      setWorkspaceName(defaultWorkspaceName)
+    } else {
+      setWorkspaceName(storedWorkspaceName || 'My Workspace')
     }
+  }, [])
 
-    setWorkspaceName(storedWorkspaceName || '')
-  }, [router])
+  // Save items to localStorage whenever items change
+  useEffect(() => {
+    localStorage.setItem('doney.items', JSON.stringify(items))
+  }, [items])
+
+  // Save goal flags to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('doney.goalFlags', JSON.stringify(goalFlags))
+  }, [goalFlags])
 
   // Dark mode effect
   useEffect(() => {
@@ -70,45 +189,20 @@ export default function Dashboard() {
     router.push('/')
   }
 
-  // Utility functions using the new tree utilities
-  const getTopLevelGoals = (): TreeNode[] => {
-    return buildTree(getRootGoals(items))
-  }
-
-  const getAllItemsFlat = () => {
-    return items.map(item => ({
-      ...item,
-      level: computeLevel(item.id, items)
-    }))
-  }
-
-  const getFilteredItems = () => {
-    const flatItems = getAllItemsFlat()
-    
-    if (todoFilter === 'all') {
-      return flatItems
-    }
-    
-    if (todoFilter.startsWith('level-')) {
-      const targetLevel = parseInt(todoFilter.split('-')[1])
-      return flatItems.filter(item => item.level === targetLevel)
-    }
-    
-    // Filter by parent ID
-    return flatItems.filter(item => item.parentId === todoFilter)
+  // Reset data function
+  const handleResetData = () => {
+    localStorage.removeItem('doney.items')
+    localStorage.removeItem('doney.goalFlags')
+    setItems([])
+    setGoalFlags({})
+    setExpandedItems(new Set())
+    setSelectedItem(null)
+    setIsDetailModalOpen(false)
+    setShowDevMenu(false)
   }
 
   // CRUD operations
   const addItem = (title: string, parentId: string | null = null) => {
-    // Validate that we're not creating a cycle
-    if (parentId) {
-      const parent = items.find(item => item.id === parentId)
-      if (!parent) {
-        console.error('Parent not found:', parentId)
-        return null
-      }
-    }
-    
     const newItem: TodoItem = {
       id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       title,
@@ -118,21 +212,31 @@ export default function Dashboard() {
     }
     setItems(prev => [...prev, newItem])
     
-    // Show post-goal creation prompt only for top-level goals
+    // Show post-goal creation prompt only for top-level goals that haven't been completed or skipped
     if (!parentId) {
-      setNewGoalTitle(title)
-      setShowPostGoalPrompt(true)
+      const goalId = newItem.id
+      const flags = goalFlags[goalId] || {}
+      
+      if (!flags.promptCompleted && !flags.promptSkipped) {
+        setNewGoalTitle(title)
+        setNewGoalId(goalId)
+        setShowPostGoalPrompt(true)
+      }
     }
     
     return newItem.id
   }
 
-  const toggleItem = (itemId: string) => {
+  const updateItem = (itemId: string, updates: Partial<TodoItem>) => {
     setItems(prev => prev.map(item => 
       item.id === itemId 
-        ? { ...item, completed: !item.completed }
+        ? { ...item, ...updates }
         : item
     ))
+  }
+
+  const toggleItem = (itemId: string) => {
+    updateItem(itemId, { completed: !items.find(i => i.id === itemId)?.completed })
   }
 
   const removeItem = (itemId: string) => {
@@ -149,10 +253,18 @@ export default function Dashboard() {
     }
   }
 
+  // DnD move handlers
+  const handleReparent = (nodeId: string, newParentId: string | null, position: 'start' | 'end' | number = 'end') => {
+    setItems(prev => reparent(nodeId, newParentId, prev, position))
+  }
+  const handleReorder = (nodeId: string, newIndex: number) => {
+    setItems(prev => reorderWithinParent(nodeId, newIndex, prev))
+  }
+
   // Expand/collapse functionality
   const toggleExpanded = (itemId: string) => {
     setExpandedItems(prev => {
-      const newSet = new Set(prev)
+      const newSet = new Set(Array.from(prev).concat([itemId]))
       if (newSet.has(itemId)) {
         newSet.delete(itemId)
       } else {
@@ -178,24 +290,52 @@ export default function Dashboard() {
 
   // Post-goal creation handlers
   const handlePostGoalTodoAdd = (todoText: string) => {
-    // Find the most recently created top-level goal
-    const rootGoals = getRootGoals(items).sort((a, b) => b.createdAt - a.createdAt)
-    const latestGoal = rootGoals[0]
-    if (latestGoal) {
-      addItem(todoText, latestGoal.id)
+    if (newGoalId) {
+      addItem(todoText, newGoalId)
     }
-    setShowPostGoalPrompt(false)
   }
 
-  const handlePostGoalClose = () => {
+  const handlePostGoalClose = (action: 'done' | 'skip') => {
+    if (newGoalId) {
+      setGoalFlags(prev => ({
+        ...prev,
+        [newGoalId]: {
+          ...prev[newGoalId],
+          promptCompleted: action === 'done',
+          promptSkipped: action === 'skip'
+        }
+      }))
+      
+      // After popup closes, auto-expand and scroll to the goal
+      const goalItem = items.find(item => item.id === newGoalId)
+      if (goalItem) {
+        // Expand the goal
+        setExpandedItems(prev => new Set(Array.from(prev).concat([newGoalId])))
+        
+        // Scroll to the goal after a short delay
+        setTimeout(() => {
+          const goalElement = document.querySelector(`[data-goal-id="${newGoalId}"]`)
+          if (goalElement) {
+            goalElement.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'center' 
+            })
+          }
+        }, 100)
+      }
+    }
     setShowPostGoalPrompt(false)
+    setNewGoalId('')
   }
+
+  const rootGoals = items.filter(item => !item.parentId)
+  const tileIds = rootGoals.map(g => `tile::${g.id}`)
 
   return (
     <div className="min-h-screen">
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm border-b border-zinc-200/70 dark:border-zinc-700">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-6">
             <div className="flex items-center space-x-2">
               <span className="text-2xl">🐝</span>
@@ -208,8 +348,16 @@ export default function Dashboard() {
             )}
           </div>
           
-          {/* Future: Navigation tabs would go here */}
           <div className="flex items-center space-x-4">
+            {/* Dev menu toggle */}
+            <button
+              onClick={() => setShowDevMenu(!showDevMenu)}
+              className="w-10 h-10 flex items-center justify-center rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+              title="Developer Menu"
+            >
+              <span className="text-lg">⚙️</span>
+            </button>
+            
             {/* Dark mode toggle */}
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
@@ -219,68 +367,106 @@ export default function Dashboard() {
                 {isDarkMode ? '☀️' : '🌙'}
               </span>
             </button>
-            {/* Future: Workspace switcher */}
+            
+            {/* Reset workspace */}
             <button
               onClick={handleLogout}
               className="btn-secondary"
             >
-              Logout
+              Reset
             </button>
           </div>
         </div>
       </header>
 
+      {/* Dev Menu */}
+      {showDevMenu && (
+        <div className="bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 px-4 py-2">
+          <div className="max-w-4xl mx-auto flex items-center justify-between">
+            <span className="text-sm text-zinc-600 dark:text-zinc-400">
+              Developer Menu
+            </span>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={handleResetData}
+                className="btn-secondary text-xs h-8 px-3 bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-800"
+              >
+                Reset Data
+              </button>
+              <button
+                onClick={() => setShowDevMenu(false)}
+                className="text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-8">
-        {/* Goal Input - Full width, centered */}
+      <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+        {/* Add Goal Input */}
         <div className="w-full max-w-2xl mx-auto">
           <GoalInput onGoalAdded={(title) => addItem(title, null)} />
         </div>
 
-        {/* Dashboard Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Goals Card */}
-          <div className="card">
-            <div className="card-header">
-              <div>
-                <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Goals</h2>
-                <p className="text-sm text-zinc-500">Your top-level goals with nested to-dos</p>
-              </div>
+        {/* Goals Feed */}
+        <DndContext sensors={sensors} onDragStart={handleFeedDragStart} onDragOver={handleFeedDragOver} onDragEnd={handleFeedDragEnd}>
+          <SortableContext items={tileIds} strategy={verticalListSortingStrategy}>
+            <div className={`space-y-4 ${activeId ? 'overflow-visible relative z-10' : ''}`}>
+              {rootGoals.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="text-5xl mb-4">🎯</div>
+                  <h3 className="text-lg font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                    No goals yet
+                  </h3>
+                  <p className="text-zinc-500 text-sm">
+                    Add your first goal above to get started
+                  </p>
+                </div>
+              ) : (
+                rootGoals.map(goal => (
+                  <SortableTile key={goal.id} goal={goal}>
+                    {({ setNodeRef, attributes, listeners, isDragging }) => (
+                      <div ref={setNodeRef} className={isDragging ? 'ring-2 ring-accent-500 ring-offset-1 rounded' : ''}>
+                        <GoalTile
+                          goal={goal}
+                          allItems={items}
+                          onUpdateItem={updateItem}
+                          onAddItem={addItem}
+                          onDeleteItem={removeItem}
+                          onReparent={handleReparent}
+                          onReorder={handleReorder}
+                          // pass tile drag handle props into GoalTile header
+                          tileHandleAttributes={attributes}
+                          tileHandleListeners={listeners}
+                          tileIsDragging={isDragging}
+                        />
+                      </div>
+                    )}
+                  </SortableTile>
+                ))
+              )}
             </div>
-            <div className="p-4">
-              <TreeView 
-                nodes={getTopLevelGoals()}
-                expandedItems={expandedItems}
-                onItemClick={handleItemClick}
-                onItemToggle={toggleItem}
-                onItemRemove={removeItem}
-                onAddSubItem={(parentId, title) => addItem(title, parentId)}
-                onExpandToggle={toggleExpanded}
-              />
-            </div>
-          </div>
+          </SortableContext>
+          {isBrowser ? (
+            createPortal(
+              <DragOverlay>{activeId?.startsWith('tile::') ? (
+                <div className="card p-3 text-sm">{items.find(i => i.id === activeId.replace('tile::',''))?.title}</div>
+              ) : null}</DragOverlay>,
+              document.body
+            )
+          ) : null}
+        </DndContext>
 
-          {/* To-Dos Card */}
-          <div className="card">
-            <div className="card-header">
-              <div>
-                <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">To-Dos</h2>
-                <p className="text-sm text-zinc-500">All to-dos from any level, filtered and organized</p>
-              </div>
-            </div>
-            <div className="p-4">
-              <FilteredTodosList 
-                items={getFilteredItems()}
-                allItems={getAllItemsFlat()}
-                filter={todoFilter}
-                onFilterChange={setTodoFilter}
-                onItemToggle={toggleItem}
-                onItemRemove={removeItem}
-                onItemClick={handleItemClick}
-              />
-            </div>
+        {/* Undo bar */}
+        {prevItemsForUndo && (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-zinc-900 text-white rounded-full px-4 py-2 shadow-lg">
+            <span className="mr-3 text-sm">Move applied</span>
+            <button onClick={undoLastMove} className="text-sm underline">Undo</button>
           </div>
-        </div>
+        )}
       </main>
 
       {/* Item Detail Modal */}
@@ -306,6 +492,7 @@ export default function Dashboard() {
       {/* Post-Goal Creation Prompt */}
       <PostGoalPrompt 
         goalTitle={newGoalTitle}
+        goalId={newGoalId}
         isVisible={showPostGoalPrompt}
         onClose={handlePostGoalClose}
         onTodoAdd={handlePostGoalTodoAdd}
