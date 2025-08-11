@@ -8,6 +8,9 @@ interface ComposerProps {
   onCancel?: () => void
   placeholder?: string
   className?: string
+  // Draft management
+  draftValue?: string
+  onDraftChange?: (parentId: string, value: string) => void
 }
 
 export default function Composer({ 
@@ -15,19 +18,25 @@ export default function Composer({
   onAddItem, 
   onCancel,
   placeholder = "Add a to-do...",
-  className = ""
+  className = "",
+  draftValue = "",
+  onDraftChange
 }: ComposerProps) {
-  const [value, setValue] = useState('')
+  const [value, setValue] = useState(draftValue)
   const [bulkAddCount, setBulkAddCount] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Temporary logging for QA
+  // Sync with draft value when parentId changes
   useEffect(() => {
-    console.log('🔍 Composer: Mounted for parentId:', parentId)
-    return () => {
-      console.log('🔍 Composer: Unmounted for parentId:', parentId)
+    setValue(draftValue)
+  }, [draftValue, parentId])
+
+  // Auto-focus when mounted
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus()
     }
-  }, [parentId])
+  }, [])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -52,6 +61,9 @@ export default function Composer({
     
     // Clear input and keep focus for repeat-add
     setValue('')
+    if (onDraftChange) {
+      onDraftChange(parentId, '')
+    }
     setTimeout(() => inputRef.current?.focus(), 100)
   }
 
@@ -67,15 +79,19 @@ export default function Composer({
     const pastedText = e.clipboardData.getData('text')
     if (pastedText.includes('\n')) {
       setValue(pastedText)
+      if (onDraftChange) {
+        onDraftChange(parentId, pastedText)
+      }
       e.preventDefault()
     }
   }
 
-  // Temporary logging for QA
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value
     setValue(newValue)
-    console.log('🔍 Composer: onChange value length:', newValue.length, 'for parentId:', parentId)
+    if (onDraftChange) {
+      onDraftChange(parentId, newValue)
+    }
   }
 
   return (

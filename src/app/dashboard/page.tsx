@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import GoalInput from '@/components/GoalInput'
 import GoalDetailModal from '@/components/GoalDetailModal'
-import GoalTile from '@/components/GoalTile'
+import TreeExplorerTile from '@/components/TreeExplorerTile'
 import { 
   TodoItem, 
   computeLevel, 
@@ -21,7 +21,6 @@ import { CSS } from '@dnd-kit/utilities'
 import { createPortal } from 'react-dom'
 
 // Interface for goal flags
-
 
 // Small sortable wrapper for tiles
 function SortableTile({ goal, children }: { goal: TodoItem, children: (p: { setNodeRef: (el: HTMLElement|null)=>void, attributes: any, listeners: any, isDragging: boolean }) => React.ReactNode }) {
@@ -50,6 +49,9 @@ export default function Dashboard() {
   
   // Single source of truth for composer state
   const [activeComposerParentId, setActiveComposerParentId] = useState<string | null>(null)
+  
+  // Draft management for composers
+  const [composerDrafts, setComposerDrafts] = useState<Map<string, string>>(new Map())
 
   const router = useRouter()
 
@@ -72,6 +74,23 @@ export default function Dashboard() {
 
   const isComposerOpenFor = (parentId: string) => {
     return activeComposerParentId === parentId
+  }
+
+  // Draft management functions
+  const handleDraftChange = (parentId: string, value: string) => {
+    setComposerDrafts(prev => {
+      const newMap = new Map(prev)
+      if (value) {
+        newMap.set(parentId, value)
+      } else {
+        newMap.delete(parentId)
+      }
+      return newMap
+    })
+  }
+
+  const getDraftValue = (parentId: string) => {
+    return composerDrafts.get(parentId) || ''
   }
 
   const handleFeedDragStart = (e: DragStartEvent) => {
@@ -196,7 +215,17 @@ export default function Dashboard() {
       }
     }
 
-
+    // Load composer drafts from localStorage
+    const savedDrafts = localStorage.getItem('doney.composerDrafts')
+    if (savedDrafts) {
+      try {
+        const parsedDrafts = JSON.parse(savedDrafts) as [string, string][]
+        setComposerDrafts(new Map(parsedDrafts))
+      } catch (error) {
+        console.error('Failed to parse saved drafts:', error)
+        localStorage.removeItem('doney.composerDrafts')
+      }
+    }
 
     // Load expanded items from localStorage
     const savedExpandedItems = localStorage.getItem('doney.expandedItems')
@@ -232,7 +261,10 @@ export default function Dashboard() {
     localStorage.setItem('doney.items', JSON.stringify(items))
   }, [items])
 
-
+  // Save composer drafts to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('doney.composerDrafts', JSON.stringify(Array.from(composerDrafts.entries())))
+  }, [composerDrafts])
 
   // Save expanded items to localStorage whenever they change
   useEffect(() => {
@@ -258,8 +290,10 @@ export default function Dashboard() {
   const handleResetData = () => {
     localStorage.removeItem('doney.items')
     localStorage.removeItem('doney.expandedItems')
+    localStorage.removeItem('doney.composerDrafts')
     setItems([])
     setExpandedItems(new Set())
+    setComposerDrafts(new Map())
     setSelectedItem(null)
     setIsDetailModalOpen(false)
     setShowDevMenu(false)
@@ -343,8 +377,6 @@ export default function Dashboard() {
     setIsDetailModalOpen(false)
     setSelectedItem(null)
   }
-
-
 
   const rootGoals = items.filter(item => !item.parentId)
   const tileIds = rootGoals.map(g => `tile::${g.id}`)
@@ -450,7 +482,7 @@ export default function Dashboard() {
                     {({ setNodeRef, attributes, listeners, isDragging }) => (
                       <div ref={setNodeRef} className={isDragging ? 'ring-2 ring-accent-500 ring-offset-1 rounded' : ''}>
                         <TileInto goalId={goal.id}>
-                          <GoalTile
+                          <TreeExplorerTile
                             goal={goal}
                             allItems={items}
                             onUpdateItem={updateItem}
@@ -463,7 +495,10 @@ export default function Dashboard() {
                             openComposerFor={openComposerFor}
                             closeComposer={closeComposer}
                             isComposerOpenFor={isComposerOpenFor}
-                            // pass tile drag handle props into GoalTile header
+                            // Draft management
+                            draftValue={getDraftValue}
+                            onDraftChange={handleDraftChange}
+                            // pass tile drag handle props into TreeExplorerTile
                             tileHandleAttributes={attributes}
                             tileHandleListeners={listeners}
                             tileIsDragging={isDragging}
@@ -514,8 +549,6 @@ export default function Dashboard() {
         onTodoToggle={toggleItem}
         onTodoRemove={removeItem}
       />
-
-
     </div>
   )
 }

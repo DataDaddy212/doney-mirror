@@ -25,16 +25,6 @@ export default function InlineEdit({
   const [isEditing, setIsEditing] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Temporary logging for QA
-  useEffect(() => {
-    if (isEditing) {
-      console.log('🔍 InlineEdit: Mounted for value:', value)
-      return () => {
-        console.log('🔍 InlineEdit: Unmounted for value:', value)
-      }
-    }
-  }, [isEditing, value])
-
   // Auto-focus when entering edit mode
   useEffect(() => {
     if (isEditing && autoFocus && inputRef.current) {
@@ -42,6 +32,13 @@ export default function InlineEdit({
       inputRef.current.select()
     }
   }, [isEditing, autoFocus])
+
+  // Update edit value when external value changes (but only when not editing)
+  useEffect(() => {
+    if (!isEditing) {
+      setEditValue(value)
+    }
+  }, [value, isEditing])
 
   const handleStartEdit = () => {
     setEditValue(value)
@@ -91,11 +88,9 @@ export default function InlineEdit({
     }, 100)
   }
 
-  // Temporary logging for QA
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value
     setEditValue(newValue)
-    console.log('🔍 InlineEdit: value length:', newValue.length, 'for original value:', value)
   }
 
   if (isEditing) {
