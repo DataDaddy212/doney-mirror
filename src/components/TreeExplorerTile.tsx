@@ -248,8 +248,18 @@ function NodeRow({
         </button>
       </div>
 
-      {/* Into drop zone (hidden but accessible) */}
-      <div ref={dnd.into.setNodeRef} className="sr-only" aria-hidden />
+      {/* Into drop zone (visible for empty parents, hidden for parents with children) */}
+      <div 
+        ref={dnd.into.setNodeRef} 
+        className={`h-1.5 rounded transition-colors duration-200 ${
+          dnd.into.isOver 
+            ? 'bg-primary-400 ring-2 ring-primary-500 ring-offset-1' 
+            : hasChildren 
+              ? 'bg-transparent' 
+              : 'bg-zinc-100 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600'
+        }`}
+        aria-hidden
+      />
 
       {/* Composer for this row */}
       {isComposerOpenFor(item.id) && (
@@ -339,6 +349,7 @@ function TreeExplorer({
   tileHandleListeners
 }: TreeExplorerProps) {
   const children = getChildren(rootItem.id, allItems)
+  const rootIntoDroppable = useDroppable({ id: `${rootItem.id}::into` })
 
   return (
     <div className="space-y-1" role="tree">
@@ -398,6 +409,19 @@ function TreeExplorer({
               onCancel={closeComposer}
             />
           </div>
+        )}
+
+        {/* Into drop zone for root (visible when no children) */}
+        {children.length === 0 && (
+          <div 
+            ref={rootIntoDroppable.setNodeRef} 
+            className={`h-1.5 rounded transition-colors duration-200 ml-6 ${
+              rootIntoDroppable.isOver 
+                ? 'bg-primary-400 ring-2 ring-primary-500 ring-offset-1' 
+                : 'bg-zinc-100 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600'
+            }`}
+            aria-hidden
+          />
         )}
       </div>
 
