@@ -260,6 +260,7 @@ function NodeRow({
             placeholder="Add a to-do..."
             draftValue={draftValue?.(item.id) || ''}
             onDraftChange={onDraftChange}
+            onCancel={closeComposer}
           />
         </div>
       )}
@@ -394,6 +395,7 @@ function TreeExplorer({
               placeholder="Add a to-do..."
               draftValue={draftValue?.(rootItem.id) || ''}
               onDraftChange={onDraftChange}
+              onCancel={closeComposer}
             />
           </div>
         )}
