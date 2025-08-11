@@ -11,6 +11,8 @@ interface ComposerProps {
   // Draft management
   draftValue?: string
   onDraftChange?: (parentId: string, value: string) => void
+  // Auto-open behavior control (future-safe, default false for calm UX)
+  autoOpenNext?: boolean
 }
 
 export default function Composer({ 
@@ -20,7 +22,8 @@ export default function Composer({
   placeholder = "Add a to-do...",
   className = "",
   draftValue = "",
-  onDraftChange
+  onDraftChange,
+  autoOpenNext = false
 }: ComposerProps) {
   const [value, setValue] = useState(draftValue)
   const [bulkAddCount, setBulkAddCount] = useState(0)
@@ -59,13 +62,19 @@ export default function Composer({
       onAddItem(trimmedValue, parentId)
     }
     
-    // Clear input and close composer (no auto-open)
+    // Clear input and handle post-create behavior based on autoOpenNext prop
     setValue('')
     if (onDraftChange) {
       onDraftChange(parentId, '')
     }
-    // Close the composer instead of keeping focus
-    onCancel?.()
+    
+    if (autoOpenNext) {
+      // Future: auto-open new composer (currently not used)
+      setTimeout(() => inputRef.current?.focus(), 100)
+    } else {
+      // Default: close composer for calm UX
+      onCancel?.()
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
