@@ -34,3 +34,27 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Additional env + secret files
+.env
+.env.*
+*.env
+.envrc
+.envrc.local
+.npmrc
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Local DB files
+*.sqlite
+dev.db
+
+# Editor & tool caches
+.idea/
+.vscode/
+.turbo/
+.swc/
+.eslintcache
+supabase/.temp

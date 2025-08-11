@@ -7,6 +7,46 @@ export interface TodoItem {
   updatedAt?: number
 }
 
+// Dev assertions to verify utility functions work correctly
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  console.log('🔍 Doney: Verifying tree utility functions...')
+  
+  // Test data
+  const testItems: TodoItem[] = [
+    { id: '1', title: 'Goal 1', completed: false, parentId: null, createdAt: Date.now() },
+    { id: '2', title: 'Todo 1.1', completed: false, parentId: '1', createdAt: Date.now() },
+    { id: '3', title: 'Todo 1.1.1', completed: false, parentId: '2', createdAt: Date.now() },
+    { id: '4', title: 'Todo 1.1.1.1', completed: false, parentId: '3', createdAt: Date.now() },
+    { id: '5', title: 'Goal 2', completed: false, parentId: null, createdAt: Date.now() },
+  ]
+  
+  // Test getChildren
+  console.assert(getChildren('1', testItems).length === 1, 'getChildren should return 1 child for Goal 1')
+  console.assert(getChildren('2', testItems).length === 1, 'getChildren should return 1 child for Todo 1.1')
+  console.assert(getChildren('4', testItems).length === 0, 'getChildren should return 0 children for leaf node')
+  
+  // Test computeLevel
+  console.assert(computeLevel('1', testItems) === 1, 'Goal 1 should be level 1')
+  console.assert(computeLevel('2', testItems) === 2, 'Todo 1.1 should be level 2')
+  console.assert(computeLevel('3', testItems) === 3, 'Todo 1.1.1 should be level 3')
+  console.assert(computeLevel('4', testItems) === 4, 'Todo 1.1.1.1 should be level 4')
+  
+  // Test hasChildren (derived from getChildren)
+  console.assert(getChildren('1', testItems).length > 0, 'Goal 1 should have children')
+  console.assert(getChildren('4', testItems).length === 0, 'Todo 1.1.1.1 should not have children')
+  
+  // Test isDescendant
+  console.assert(isDescendant('4', '1', testItems), 'Todo 1.1.1.1 should be descendant of Goal 1')
+  console.assert(isDescendant('3', '1', testItems), 'Todo 1.1.1 should be descendant of Goal 1')
+  console.assert(!isDescendant('1', '4', testItems), 'Goal 1 should not be descendant of Todo 1.1.1.1')
+  
+  // Test getAncestors
+  console.assert(getAncestors('4', testItems).length === 3, 'Todo 1.1.1.1 should have 3 ancestors')
+  console.assert(getAncestors('1', testItems).length === 0, 'Goal 1 should have 0 ancestors')
+  
+  console.log('✅ Doney: All tree utility assertions passed!')
+}
+
 export interface TreeNode {
   item: TodoItem
   children: TreeNode[]

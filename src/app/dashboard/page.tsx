@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import GoalInput from '@/components/GoalInput'
 import GoalDetailModal from '@/components/GoalDetailModal'
-import PostGoalPrompt from '@/components/PostGoalPrompt'
 import GoalTile from '@/components/GoalTile'
 import { 
   TodoItem, 
@@ -22,12 +21,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { createPortal } from 'react-dom'
 
 // Interface for goal flags
-interface GoalFlags {
-  [goalId: string]: {
-    promptCompleted?: boolean
-    promptSkipped?: boolean
-  }
-}
+
 
 // Small sortable wrapper for tiles
 function SortableTile({ goal, children }: { goal: TodoItem, children: (p: { setNodeRef: (el: HTMLElement|null)=>void, attributes: any, listeners: any, isDragging: boolean }) => React.ReactNode }) {
@@ -49,21 +43,36 @@ export default function Dashboard() {
   const [workspaceName, setWorkspaceName] = useState('')
   const [selectedItem, setSelectedItem] = useState<TodoItem | null>(null)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
-  const [showPostGoalPrompt, setShowPostGoalPrompt] = useState(false)
-  const [newGoalTitle, setNewGoalTitle] = useState('')
-  const [newGoalId, setNewGoalId] = useState('')
+
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   const [isDarkMode, setIsDarkMode] = useState(false)
   const [showDevMenu, setShowDevMenu] = useState(false)
-  const [goalFlags, setGoalFlags] = useState<GoalFlags>({})
+  
+  // Single source of truth for composer state
+  const [activeComposerParentId, setActiveComposerParentId] = useState<string | null>(null)
+
   const router = useRouter()
 
   const sensors = useSensors(useSensor(PointerSensor))
   const [activeId, setActiveId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
   const [prevItemsForUndo, setPrevItemsForUndo] = useState<TodoItem[] | null>(null)
+  const [lastMoveMessage, setLastMoveMessage] = useState<string | null>(null)
 
   const labelFor = (id: string) => items.find(i => i.id === id.replace('tile::',''))?.title ?? id
+
+  // Composer management functions
+  const openComposerFor = (parentId: string) => {
+    setActiveComposerParentId(parentId)
+  }
+
+  const closeComposer = () => {
+    setActiveComposerParentId(null)
+  }
+
+  const isComposerOpenFor = (parentId: string) => {
+    return activeComposerParentId === parentId
+  }
 
   const handleFeedDragStart = (e: DragStartEvent) => {
     const id = String(e.active.id)
@@ -78,7 +87,28 @@ export default function Dashboard() {
     const o = e.over?.id ? String(e.over.id) : null
     const a = activeId
     console.log('[FEED DnD] end', { activeId: a, overId: o })
-    if (a && o && a !== o && a.startsWith('tile::') && o.startsWith('tile::')) {
+    if (!a || !o) { setActiveId(null); return }
+    // Tile -> INTO reparent
+    if (a.startsWith('tile::') && o.startsWith('tile::') && o.includes('::into')) {
+      const activeGoalId = a.replace('tile::','')
+      const targetGoalId = o.replace('tile::','').replace('::into','')
+      if (activeGoalId === targetGoalId) { setActiveId(null); return }
+      if (isDescendant(targetGoalId, activeGoalId, items)) {
+        console.warn('[FEED DnD] blocked: cannot drop tile into its own descendant')
+        setActiveId(null)
+        return
+      }
+      setPrevItemsForUndo(items)
+      const activeTitle = items.find(i => i.id === activeGoalId)?.title || activeGoalId
+      const targetTitle = items.find(i => i.id === targetGoalId)?.title || targetGoalId
+      setItems(prev => reparent(activeGoalId, targetGoalId, prev, 'end'))
+      setLastMoveMessage(`Moved "${activeTitle}" under "${targetTitle}" — Undo`)
+      console.log('[FEED DnD] reparent into tile', { activeGoalId, targetGoalId, action: 'demote goal' })
+      setActiveId(null)
+      return
+    }
+    // Root reorder preserved
+    if (a.startsWith('tile::') && o.startsWith('tile::') && !o.includes('::into')) {
       const roots = items.filter(i => i.parentId === null).map(i => i.id)
       const fromId = a.replace('tile::','')
       const toId = o.replace('tile::','')
@@ -88,9 +118,40 @@ export default function Dashboard() {
         const newOrder = roots.slice()
         newOrder.splice(fromIdx, 1)
         newOrder.splice(toIdx, 0, fromId)
+        setPrevItemsForUndo(items)
         setItems(prev => reorderRoots(newOrder, prev))
-        console.log('[FEED DnD] reorder roots', { fromId, toId })
+        setLastMoveMessage('Reordered goals — Undo')
+        console.log('[FEED DnD] reorder roots', { fromId, toId, action: 'reorder roots' })
       }
+      setActiveId(null)
+      return
+    }
+    // Child node cross-goal reparent into tile body
+    if (!a.startsWith('tile::') && o.startsWith('tile::') && o.includes('::into')) {
+      const targetGoalId = o.replace('tile::','').replace('::into','')
+      if (isDescendant(targetGoalId, a, items)) {
+        console.warn('[FEED DnD] blocked: cannot drop node into its own descendant')
+        setActiveId(null)
+        return
+      }
+      setPrevItemsForUndo(items)
+      const activeTitle = items.find(i => i.id === a)?.title || a
+      const targetTitle = items.find(i => i.id === targetGoalId)?.title || targetGoalId
+      setItems(prev => reparent(a, targetGoalId, prev, 'end'))
+      setLastMoveMessage(`Moved "${activeTitle}" under "${targetTitle}" — Undo`)
+      console.log('[FEED DnD] reparent child into tile', { nodeId: a, targetGoalId, action: 'reparent child' })
+      setActiveId(null)
+      return
+    }
+    // Promote child to root via feed root drop zone
+    if (!a.startsWith('tile::') && o === 'feed::root') {
+      setPrevItemsForUndo(items)
+      const activeTitle = items.find(i => i.id === a)?.title || a
+      setItems(prev => reparent(a, null, prev, 'end'))
+      setLastMoveMessage(`Promoted "${activeTitle}" to root — Undo`)
+      console.log('[FEED DnD] promote to root', { nodeId: a, action: 'promote to root' })
+      setActiveId(null)
+      return
     }
     setActiveId(null)
   }
@@ -113,7 +174,7 @@ export default function Dashboard() {
   }
   function TileInto({ goalId, children }: { goalId: string, children: React.ReactNode }) {
     const { setNodeRef, isOver } = useDroppable({ id: `tile::${goalId}::into` })
-    return <div ref={setNodeRef} className={`${isOver ? 'outline outline-2 outline-primary-400' : ''}`}>{children}</div>
+    return <div ref={setNodeRef} className={isOver ? 'rounded-lg outline outline-2 outline-primary-400' : ''}>{children}</div>
   }
   function TileAfter({ goalId }: { goalId: string }) {
     const { setNodeRef, isOver } = useDroppable({ id: `tile::${goalId}::after` })
@@ -135,15 +196,17 @@ export default function Dashboard() {
       }
     }
 
-    // Load goal flags from localStorage
-    const savedGoalFlags = localStorage.getItem('doney.goalFlags')
-    if (savedGoalFlags) {
+
+
+    // Load expanded items from localStorage
+    const savedExpandedItems = localStorage.getItem('doney.expandedItems')
+    if (savedExpandedItems) {
       try {
-        const parsedFlags = JSON.parse(savedGoalFlags) as GoalFlags
-        setGoalFlags(parsedFlags)
+        const parsedExpandedItems = JSON.parse(savedExpandedItems) as string[]
+        setExpandedItems(new Set(parsedExpandedItems))
       } catch (error) {
-        console.error('Failed to parse saved goal flags:', error)
-        localStorage.removeItem('doney.goalFlags')
+        console.error('Failed to parse saved expanded items:', error)
+        localStorage.removeItem('doney.expandedItems')
       }
     }
 
@@ -169,10 +232,12 @@ export default function Dashboard() {
     localStorage.setItem('doney.items', JSON.stringify(items))
   }, [items])
 
-  // Save goal flags to localStorage whenever they change
+
+
+  // Save expanded items to localStorage whenever they change
   useEffect(() => {
-    localStorage.setItem('doney.goalFlags', JSON.stringify(goalFlags))
-  }, [goalFlags])
+    localStorage.setItem('doney.expandedItems', JSON.stringify(Array.from(expandedItems)))
+  }, [expandedItems])
 
   // Dark mode effect
   useEffect(() => {
@@ -192,9 +257,8 @@ export default function Dashboard() {
   // Reset data function
   const handleResetData = () => {
     localStorage.removeItem('doney.items')
-    localStorage.removeItem('doney.goalFlags')
+    localStorage.removeItem('doney.expandedItems')
     setItems([])
-    setGoalFlags({})
     setExpandedItems(new Set())
     setSelectedItem(null)
     setIsDetailModalOpen(false)
@@ -208,21 +272,13 @@ export default function Dashboard() {
       title,
       completed: false,
       parentId,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      updatedAt: Date.now()
     }
     setItems(prev => [...prev, newItem])
     
-    // Show post-goal creation prompt only for top-level goals that haven't been completed or skipped
-    if (!parentId) {
-      const goalId = newItem.id
-      const flags = goalFlags[goalId] || {}
-      
-      if (!flags.promptCompleted && !flags.promptSkipped) {
-        setNewGoalTitle(title)
-        setNewGoalId(goalId)
-        setShowPostGoalPrompt(true)
-      }
-    }
+    // Composer is now manually triggered via plus buttons
+    // No auto-open behavior
     
     return newItem.id
   }
@@ -288,45 +344,7 @@ export default function Dashboard() {
     setSelectedItem(null)
   }
 
-  // Post-goal creation handlers
-  const handlePostGoalTodoAdd = (todoText: string) => {
-    if (newGoalId) {
-      addItem(todoText, newGoalId)
-    }
-  }
 
-  const handlePostGoalClose = (action: 'done' | 'skip') => {
-    if (newGoalId) {
-      setGoalFlags(prev => ({
-        ...prev,
-        [newGoalId]: {
-          ...prev[newGoalId],
-          promptCompleted: action === 'done',
-          promptSkipped: action === 'skip'
-        }
-      }))
-      
-      // After popup closes, auto-expand and scroll to the goal
-      const goalItem = items.find(item => item.id === newGoalId)
-      if (goalItem) {
-        // Expand the goal
-        setExpandedItems(prev => new Set(Array.from(prev).concat([newGoalId])))
-        
-        // Scroll to the goal after a short delay
-        setTimeout(() => {
-          const goalElement = document.querySelector(`[data-goal-id="${newGoalId}"]`)
-          if (goalElement) {
-            goalElement.scrollIntoView({ 
-              behavior: 'smooth', 
-              block: 'center' 
-            })
-          }
-        }, 100)
-      }
-    }
-    setShowPostGoalPrompt(false)
-    setNewGoalId('')
-  }
 
   const rootGoals = items.filter(item => !item.parentId)
   const tileIds = rootGoals.map(g => `tile::${g.id}`)
@@ -413,6 +431,7 @@ export default function Dashboard() {
 
         {/* Goals Feed */}
         <DndContext sensors={sensors} onDragStart={handleFeedDragStart} onDragOver={handleFeedDragOver} onDragEnd={handleFeedDragEnd}>
+          <FeedRootDropZone />
           <SortableContext items={tileIds} strategy={verticalListSortingStrategy}>
             <div className={`space-y-4 ${activeId ? 'overflow-visible relative z-10' : ''}`}>
               {rootGoals.length === 0 ? (
@@ -430,19 +449,26 @@ export default function Dashboard() {
                   <SortableTile key={goal.id} goal={goal}>
                     {({ setNodeRef, attributes, listeners, isDragging }) => (
                       <div ref={setNodeRef} className={isDragging ? 'ring-2 ring-accent-500 ring-offset-1 rounded' : ''}>
-                        <GoalTile
-                          goal={goal}
-                          allItems={items}
-                          onUpdateItem={updateItem}
-                          onAddItem={addItem}
-                          onDeleteItem={removeItem}
-                          onReparent={handleReparent}
-                          onReorder={handleReorder}
-                          // pass tile drag handle props into GoalTile header
-                          tileHandleAttributes={attributes}
-                          tileHandleListeners={listeners}
-                          tileIsDragging={isDragging}
-                        />
+                        <TileInto goalId={goal.id}>
+                          <GoalTile
+                            goal={goal}
+                            allItems={items}
+                            onUpdateItem={updateItem}
+                            onAddItem={addItem}
+                            onDeleteItem={removeItem}
+                            onReparent={handleReparent}
+                            onReorder={handleReorder}
+                            // Composer management
+                            activeComposerParentId={activeComposerParentId}
+                            openComposerFor={openComposerFor}
+                            closeComposer={closeComposer}
+                            isComposerOpenFor={isComposerOpenFor}
+                            // pass tile drag handle props into GoalTile header
+                            tileHandleAttributes={attributes}
+                            tileHandleListeners={listeners}
+                            tileIsDragging={isDragging}
+                          />
+                        </TileInto>
                       </div>
                     )}
                   </SortableTile>
@@ -463,7 +489,7 @@ export default function Dashboard() {
         {/* Undo bar */}
         {prevItemsForUndo && (
           <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-zinc-900 text-white rounded-full px-4 py-2 shadow-lg">
-            <span className="mr-3 text-sm">Move applied</span>
+            <span className="mr-3 text-sm">{lastMoveMessage || 'Move applied'}</span>
             <button onClick={undoLastMove} className="text-sm underline">Undo</button>
           </div>
         )}
@@ -489,14 +515,7 @@ export default function Dashboard() {
         onTodoRemove={removeItem}
       />
 
-      {/* Post-Goal Creation Prompt */}
-      <PostGoalPrompt 
-        goalTitle={newGoalTitle}
-        goalId={newGoalId}
-        isVisible={showPostGoalPrompt}
-        onClose={handlePostGoalClose}
-        onTodoAdd={handlePostGoalTodoAdd}
-      />
+
     </div>
   )
 }
