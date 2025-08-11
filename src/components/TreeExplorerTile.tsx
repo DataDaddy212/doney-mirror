@@ -203,7 +203,7 @@ function NodeRow({
       <div 
         ref={dnd.draggable.setNodeRef} 
         className={`flex items-center space-x-2 py-2 rounded ${isActive ? 'ring-2 ring-accent-500 ring-offset-1' : ''} ${dnd.into.isOver ? 'outline outline-2 outline-primary-400' : ''}`}
-        style={{ marginLeft: `${(depth - 1) * 16}px` }}
+        style={{ paddingLeft: `${depth * 12}px` }}
       >
         {/* Drag handle */}
         <button 
@@ -343,7 +343,7 @@ function TreeExplorer({
     <div className="space-y-1" role="tree">
       {/* Root goal row */}
       <div className="relative">
-        <div className="flex items-center space-x-2 py-2">
+        <div className="flex items-center space-x-2 py-2" style={{ paddingLeft: `${0 * 12}px` }}>
           {/* Tile drag handle */}
           <button 
             {...(tileHandleAttributes||{})} 

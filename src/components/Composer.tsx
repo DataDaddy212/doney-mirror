@@ -59,16 +59,18 @@ export default function Composer({
       onAddItem(trimmedValue, parentId)
     }
     
-    // Clear input and keep focus for repeat-add
+    // Clear input and close composer (no auto-open)
     setValue('')
     if (onDraftChange) {
       onDraftChange(parentId, '')
     }
-    setTimeout(() => inputRef.current?.focus(), 100)
+    // Close the composer instead of keeping focus
+    onCancel?.()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
+      e.preventDefault()
       handleSubmit(e as any)
     } else if (e.key === 'Escape') {
       onCancel?.()
