@@ -307,6 +307,46 @@ body {
     outline-offset: -2px;
 }
 
+/* Composer styles */
+.composer {
+    background: white;
+    border: 2px solid #ffd700;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 4px 12px rgba(255, 215, 0, 0.2);
+}
+
+.composer-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.composer-input {
+    border: 2px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 0.75rem;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s ease;
+}
+
+.composer-input:focus {
+    border-color: #ffd700;
+}
+
+.composer-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+}
+
+.composer .btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+}
+
 /* Empty state */
 .empty-state {
     padding: 3rem 2rem;

@@ -48,11 +48,35 @@ Doney is a collaborative goal + to-do network with infinite hierarchy. Any to-do
 ## Persistence
 - LocalStorage for items, collapse state, and drafts.
 
-## Order of work when confused
-1) Invariants & pure utils
-2) Composer everywhere
-3) DnD insertion/re-parent (rows)
-4) DnD demote/promote (tiles)
-5) QA checklist
+## Current MVP Status ✅
+
+**Completed:**
+- ✅ Invariants & pure utils (no stored level, computeLevel removed)
+- ✅ Composer everywhere (inline composer for root and sub-items)
+- ✅ Basic item management (add, edit, delete, toggle, collapse)
+- ✅ Data store with Map-based lookups (no recursion)
+- ✅ Debounced persistence (200ms)
+- ✅ Stack overflow fixed
+
+**Next Steps:**
+1) DnD insertion/re-parent (rows) - drag zones, drop targets
+2) DnD demote/promote (tiles) - full reorganization
+3) Enhanced UX - visual feedback, better indicators
+4) QA checklist and performance optimization
+
+## Data Store Architecture
+
+```javascript
+store = {
+  byId: Map<string, Item>,           // O(1) item lookup
+  childrenByParent: Map<parentId, ItemId[]>, // parent → children
+  rootIds: string[]                  // root level items
+}
+```
+
+**Key Functions:**
+- `addItem({parentId, text})` - creates items with proper parentage
+- `getVisibleLinearOrder()` - pure function, no side effects
+- `rebuildIndexesFromArray()` - single source of truth rebuild
 ---
 

@@ -110,5 +110,20 @@ MIT License - Feel free to use this project for personal or commercial purposes.
 
 **Built with ❤️ by the Doney team**
 
-*"Nest your tasks, conquer your world"* 🐝
+*"Map your tasks, get stuff done"* 🐝
+
+## 🚧 Known Limitations
+
+The current MVP focuses on core functionality. These features are planned for the next iteration:
+
+- **Drag and Drop Reorganization**: Full promote/demote functionality with visual feedback
+- **Advanced Item Movement**: Before/after sibling reordering and re-parenting
+- **Enhanced UX**: Better visual indicators for drag zones and drop targets
+
+## 🔧 Technical Architecture
+
+- **Data Store**: In-memory store with Map-based lookups for O(1) performance
+- **No Recursion**: Eliminated circular dependencies that caused stack overflow
+- **Debounced Persistence**: 200ms debounced localStorage saves for performance
+- **Pure Functions**: `getVisibleLinearOrder()` provides clean data without side effects
 
