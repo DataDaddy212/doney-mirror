@@ -1,0 +1,145 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+  
+  body {
+    @apply bg-zinc-50 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100;
+    @apply antialiased;
+  }
+
+  /* Focus styles for accessibility */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-primary-300 ring-offset-2;
+  }
+}
+
+@layer components {
+  /* Input Components */
+  .input-base {
+    @apply h-11 rounded-2xl border border-zinc-200 px-4 text-sm bg-white placeholder:text-zinc-400;
+    @apply dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100;
+    @apply focus:ring-2 focus:ring-primary-300 focus:border-primary-200 transition-all duration-150;
+  }
+
+  /* Button Components */
+  .btn-primary {
+    @apply bg-primary-500 hover:bg-primary-600 active:bg-primary-700 text-white;
+    @apply rounded-2xl px-4 h-10 font-medium text-sm;
+    @apply transition-all duration-150 ease-out;
+    @apply hover:scale-102 active:scale-100;
+    @apply focus:ring-2 focus:ring-primary-300 focus:ring-offset-2;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100;
+  }
+
+  .btn-secondary {
+    @apply border border-zinc-200 rounded-2xl h-10 px-3 font-medium text-sm text-zinc-700;
+    @apply hover:bg-zinc-50 active:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300;
+    @apply dark:hover:bg-zinc-800 dark:active:bg-zinc-700;
+    @apply transition-all duration-150 ease-out hover:scale-102 active:scale-100;
+    @apply focus:ring-2 focus:ring-primary-300 focus:ring-offset-2;
+  }
+
+  .btn-destructive {
+    @apply bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white;
+    @apply rounded-2xl px-4 h-10 font-medium text-sm;
+    @apply transition-all duration-150 ease-out hover:scale-102 active:scale-100;
+    @apply focus:ring-2 focus:ring-rose-300 focus:ring-offset-2;
+  }
+
+  /* Card Components */
+  .card {
+    @apply rounded-2xl border border-zinc-200/70 shadow-sm bg-white;
+    @apply dark:bg-zinc-800 dark:border-zinc-700;
+  }
+
+  .card-header {
+    @apply py-3 px-4 border-b border-zinc-200/70 dark:border-zinc-700;
+    @apply flex items-center justify-between;
+  }
+
+  /* List Row Components */
+  .list-row {
+    @apply flex items-center gap-3 px-3 py-2 rounded-xl;
+    @apply hover:bg-primary-50/60 dark:hover:bg-zinc-800;
+    @apply transition-all duration-150 ease-out;
+  }
+
+  .list-row:hover {
+    @apply scale-[1.01];
+  }
+
+  /* Badge Components */
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-neutral {
+    @apply bg-zinc-100 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300;
+  }
+
+  .badge-primary {
+    @apply bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300;
+  }
+
+  /* Tree indentation with connecting lines */
+  .tree-indent {
+    @apply border-l border-zinc-200 pl-3 ml-3 dark:border-zinc-700;
+  }
+}
+
+@layer utilities {
+  .scale-102 {
+    transform: scale(1.02);
+  }
+
+  /* Custom scrollbar */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: theme(colors.zinc.300) theme(colors.zinc.100);
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    @apply bg-zinc-100 dark:bg-zinc-800;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply bg-zinc-300 dark:bg-zinc-600 rounded-full;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    @apply bg-zinc-400 dark:bg-zinc-500;
+  }
+}
+
+/* Animation keyframes */
+@keyframes bounce-in {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  70% {
+    transform: scale(0.9);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-bounce-in {
+  animation: bounce-in 0.6s ease-out;
+}
+
+
