@@ -38,10 +38,52 @@ class DoneyApp {
         document.getElementById('addRootItem').addEventListener('click', () => this.showComposer());
         document.getElementById('clearAll').addEventListener('click', () => this.clearAll());
         
+        // Event delegation for the tree container
+        const container = document.getElementById('itemsContainer');
+        container.addEventListener('click', (e) => this.handleTreeClick(e));
+        
         // Global drag and drop
         document.addEventListener('dragover', (e) => this.handleDragOver(e));
         document.addEventListener('drop', (e) => this.handleDrop(e));
         document.addEventListener('dragend', () => this.handleDragEnd());
+    }
+
+    // Event delegation handler for tree actions
+    handleTreeClick(e) {
+        const target = e.target;
+        
+        // Handle checkbox toggle
+        if (target.classList.contains('item-toggle')) {
+            const itemId = target.closest('.item').dataset.id;
+            this.toggleItem(itemId);
+            return;
+        }
+        
+        // Handle inline editing
+        if (target.classList.contains('item-text')) {
+            const itemId = target.closest('.item').dataset.id;
+            this.startEditing(itemId);
+            return;
+        }
+        
+        // Handle action buttons
+        if (target.classList.contains('action-btn')) {
+            const itemId = target.closest('.item').dataset.id;
+            const action = target.dataset.action;
+            
+            switch (action) {
+                case 'add-child':
+                    this.showComposer(itemId);
+                    break;
+                case 'toggle-collapse':
+                    this.toggleCollapse(itemId);
+                    break;
+                case 'delete':
+                    this.deleteItem(itemId);
+                    break;
+            }
+            return;
+        }
     }
 
     // Hydration (one place only)
@@ -119,6 +161,26 @@ class DoneyApp {
         return state.childrenByParent.get(parentId) || [];
     }
 
+    hasChildren(parentId) {
+        const children = this.getChildren(parentId);
+        return children.length > 0;
+    }
+
+    // Compute level for an item (pure function)
+    computeLevel(id) {
+        let level = 1;
+        let currentId = id;
+        
+        while (currentId) {
+            const item = state.byId.get(currentId);
+            if (!item || item.parentId === null) break;
+            level++;
+            currentId = item.parentId;
+        }
+        
+        return level;
+    }
+
     // Helper to ensure bucket exists
     ensureBucket(parentId) {
         const parentKey = parentId || null;
@@ -167,6 +229,14 @@ class DoneyApp {
         
         this.saveState();
         this.render();
+        
+        // Focus on the new item for better UX
+        setTimeout(() => {
+            const newItemElement = document.querySelector(`[data-id="${newItem.id}"]`);
+            if (newItemElement) {
+                newItemElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }, 100);
     }
 
     getNextOrder(parentId) {
@@ -176,6 +246,12 @@ class DoneyApp {
 
     // Composer functions
     showComposer(parentId = null) {
+        // Remove any existing composer first
+        const existingComposer = document.querySelector('.composer');
+        if (existingComposer) {
+            existingComposer.remove();
+        }
+
         const composer = document.createElement('div');
         composer.className = 'composer';
         composer.innerHTML = `
@@ -188,9 +264,19 @@ class DoneyApp {
             </div>
         `;
 
-        // Insert at the top of the items container
-        const container = document.getElementById('itemsContainer');
-        container.insertBefore(composer, container.firstChild);
+        // Insert at the appropriate location
+        if (parentId === null) {
+            // Root item composer - insert at top
+            const container = document.getElementById('itemsContainer');
+            container.insertBefore(composer, container.firstChild);
+        } else {
+            // Sub-item composer - insert directly under the parent row
+            const parentElement = document.querySelector(`[data-id="${parentId}"]`);
+            if (parentElement) {
+                // Insert the composer right after the parent item
+                parentElement.parentNode.insertBefore(composer, parentElement.nextSibling);
+            }
+        }
 
         const input = composer.querySelector('.composer-input');
         const createBtn = composer.querySelector('.composer-create');
@@ -248,6 +334,19 @@ class DoneyApp {
         const item = this.getItemById(id);
         if (!item) return;
 
+        // Check if item has children
+        const hasChildren = this.hasChildren(id);
+        
+        if (hasChildren) {
+            const confirmed = confirm(`Delete this item and all ${this.getChildren(id).length} sub-items?`);
+            if (!confirmed) return;
+        }
+
+        // Find the parent element for focus management
+        const parentElement = item.parentId ? 
+            document.querySelector(`[data-id="${item.parentId}"]`) : 
+            document.getElementById('itemsContainer');
+
         // Remove from parent's children array
         if (item.parentId === null) {
             state.rootIds = state.rootIds.filter(rootId => rootId !== id);
@@ -265,6 +364,22 @@ class DoneyApp {
         
         this.saveState();
         this.render();
+        
+        // Focus management after deletion
+        if (parentElement) {
+            setTimeout(() => {
+                if (item.parentId === null) {
+                    // Root item deleted - focus on first remaining root item
+                    const firstRoot = document.querySelector('.item');
+                    if (firstRoot) {
+                        firstRoot.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                } else {
+                    // Sub-item deleted - focus on parent
+                    parentElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }, 100);
+        }
     }
 
     deleteItemRecursive(id) {
@@ -371,15 +486,32 @@ class DoneyApp {
             return;
         }
 
-        state.rootIds.forEach(itemId => {
-            const itemElement = this.renderItem(itemId);
-            container.appendChild(itemElement);
-        });
+        // Render all items in flat order with proper hierarchy
+        this.renderItemsInOrder(container, state.rootIds);
         
         console.log('Rendering complete');
     }
 
-    renderItem(itemId) {
+    // Render items in hierarchical order
+    renderItemsInOrder(container, itemIds, level = 1) {
+        itemIds.forEach(itemId => {
+            const item = this.getItemById(itemId);
+            if (!item) return;
+
+            const itemElement = this.renderItem(itemId, level);
+            container.appendChild(itemElement);
+
+            // Render children if not collapsed
+            if (!item.collapsed) {
+                const children = this.getChildren(itemId);
+                if (children.length > 0) {
+                    this.renderItemsInOrder(container, children, level + 1);
+                }
+            }
+        });
+    }
+
+    renderItem(itemId, level = 1) {
         const item = this.getItemById(itemId);
         if (!item) {
             console.error(`Item ${itemId} not found!`);
@@ -389,7 +521,15 @@ class DoneyApp {
         const itemDiv = document.createElement('div');
         itemDiv.className = 'item';
         itemDiv.dataset.id = item.id;
+        itemDiv.dataset.level = level;
         itemDiv.draggable = true;
+
+        // Set CSS custom property for indentation
+        itemDiv.style.setProperty('--level', level);
+
+        // Use chevron instead of down arrow
+        const chevronIcon = item.collapsed ? '▶' : '▼';
+        const hasChildren = this.hasChildren(item.id);
 
         itemDiv.innerHTML = `
             <div class="item-content">
@@ -402,13 +542,13 @@ class DoneyApp {
                 </div>
             </div>
             <div class="item-actions">
-                <button class="action-btn" onclick="app.showComposer('${item.id}')" title="Add sub-item">
+                <button class="action-btn" data-action="add-child" title="Add sub-item">
                     +
                 </button>
-                <button class="action-btn" onclick="app.toggleCollapse('${item.id}')" title="Toggle collapse">
-                    ${item.collapsed ? '▶' : '▼'}
+                <button class="action-btn ${hasChildren ? '' : 'hidden'}" data-action="toggle-collapse" title="Toggle collapse">
+                    ${chevronIcon}
                 </button>
-                <button class="action-btn" onclick="app.deleteItem('${item.id}')" title="Delete">
+                <button class="action-btn" data-action="delete" title="Delete">
                     ×
                 </button>
             </div>
@@ -416,20 +556,6 @@ class DoneyApp {
 
         // Add drag and drop event listeners
         itemDiv.addEventListener('dragstart', (e) => this.startDrag(e, item.id));
-
-        // Render children if not collapsed
-        const children = this.getChildren(item.id);
-        if (children.length > 0 && !item.collapsed) {
-            const childrenContainer = document.createElement('div');
-            childrenContainer.className = 'children';
-            
-            children.forEach(childId => {
-                const childElement = this.renderItem(childId);
-                childrenContainer.appendChild(childElement);
-            });
-            
-            itemDiv.appendChild(childrenContainer);
-        }
 
         return itemDiv;
     }
