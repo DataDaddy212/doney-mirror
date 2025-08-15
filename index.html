@@ -1,42 +1,381 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Doney - The Ultimate To-Do List</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Doney 2.0 MVP</title>
+  <style>
+    /* ===== Minimal neutral styling (no animations, no yellow) ===== */
+    :root { --line:#ddd; --fg:#111; --bg:#fff; --muted:#666; }
+    * { box-sizing:border-box; }
+    html,body { margin:0; padding:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    header { padding:12px; border-bottom:1px solid var(--line); }
+    h1 { margin:0 0 8px 0; font-size:18px; }
+    .row { display:flex; gap:8px; align-items:center; }
+    .text { flex:1; padding:8px 10px; border:1px solid var(--line); border-radius:6px; }
+    .btn { border:1px solid var(--line); background:#f7f7f7; padding:6px 10px; border-radius:6px; cursor:pointer; }
+    .btn-xs { width:26px; height:26px; border:1px solid var(--line); background:#f7f7f7; border-radius:6px; cursor:pointer; }
+    main { padding:12px; }
+    /* Tree structure */
+    ul.tree { list-style:none; margin:0; padding:0; }
+    li.item { list-style:none; margin:0; padding:0; }
+    .item > .item-row {
+      display:flex; align-items:center; gap:8px;
+      padding:6px 8px; border:1px solid transparent; border-radius:8px;
+    }
+    .item > .item-row:focus-within { border-color:var(--line); background:#fafafa; }
+    .chev { width:28px; min-width:28px; height:28px; border:1px solid var(--line); border-radius:6px; background:#f7f7f7; cursor:pointer; }
+    .title { min-width:40px; outline:none; padding:2px 4px; border:1px solid transparent; border-radius:4px; }
+    .title:focus { border-color:var(--line); background:#fff; }
+    .actions { margin-left:auto; display:flex; gap:6px; }
+    ul.children { list-style:none; margin:0 0 0 24px; padding-left:14px; border-left:1px dashed var(--line); }
+    .collapsed > .children { display:none; }
+    .collapsed > .item-row .chev { transform:rotate(-90deg); }
+    /* Drag-and-drop hints */
+    .drag-ghost { opacity:0.6; }
+    .drop-on { outline:2px solid #bbb; border-radius:8px; }
+    .drop-line { height:6px; margin:2px 0; border-radius:3px; background:#d0d0d0; display:none; }
+    .drop-line.active { display:block; }
+  </style>
 </head>
 <body>
-    <div class="app">
-        <header class="header">
-            <div class="logo">
-                <div class="bumblebee">🐝</div>
-                <h1>Doney</h1>
-            </div>
-            <p class="tagline">Map your tasks, get stuff done</p>
-        </header>
-
-        <main class="main">
-            <div class="toolbar">
-                <button class="btn btn-primary" id="addRootItem">
-                    <span>+</span> Add Item
-                </button>
-                <button class="btn btn-secondary" id="clearAll">
-                    Clear All
-                </button>
-            </div>
-
-            <div class="items-container" id="itemsContainer">
-                <!-- Items will be dynamically added here -->
-            </div>
-        </main>
-
-        <footer class="footer">
-            <p>Built with ❤️ by the Doney team</p>
-        </footer>
+  <header>
+    <h1>Doney</h1>
+    <div class="row">
+      <!-- Add root items -->
+      <input id="rootInput" class="text" placeholder="Add an item and press Enter" />
+      <button id="rootAdd" class="btn">Add</button>
+      <button id="expandAll" class="btn">Expand all</button>
+      <button id="collapseAll" class="btn">Collapse all</button>
+      <button id="reset" class="btn">Reset</button>
     </div>
+  </header>
 
-    <script src="app.js"></script>
+  <main>
+    <!-- Root of the tree -->
+    <ul id="tree" class="tree" aria-label="Items"></ul>
+  </main>
+
+  <!-- Item template (structure only; filled by JS) -->
+  <template id="tpl-item">
+    <li class="item" draggable="true">
+      <!-- Sibling drop zone ABOVE this row -->
+      <div class="drop-line" data-zone="above"></div>
+
+      <div class="item-row">
+        <!-- Collapse/expand -->
+        <button class="chev" title="Collapse/expand" aria-label="Toggle">▾</button>
+        <!-- Inline editable title -->
+        <span class="title" contenteditable="true" spellcheck="false"></span>
+        <!-- Always-visible actions: add child, delete -->
+        <div class="actions">
+          <button class="btn-xs add" title="Add sub-item">+</button>
+          <button class="btn-xs del" title="Delete item">×</button>
+        </div>
+      </div>
+
+      <!-- Drop zone ON the row (to become a child) is the row itself -->
+      <ul class="children"></ul>
+
+      <!-- Sibling drop zone BELOW this row -->
+      <div class="drop-line" data-zone="below"></div>
+    </li>
+  </template>
+
+  <script>
+    // ============ Doney 2.0 MVP core (plain JS) ============
+    // STATE SHAPE:
+    // { id, title, collapsed, children: [same shape...] }
+    const STORAGE_KEY = 'doney_v2_state';
+    let state = { items: [], version: 1 };
+    let saveTimer = null;
+
+    const $tree = document.getElementById('tree');
+    const $tpl = document.getElementById('tpl-item');
+
+    const $rootInput = document.getElementById('rootInput');
+    const $rootAdd = document.getElementById('rootAdd');
+    const $expandAll = document.getElementById('expandAll');
+    const $collapseAll = document.getElementById('collapseAll');
+    const $reset = document.getElementById('reset');
+
+    // ---------- Utilities ----------
+    const uid = () => Math.random().toString(36).slice(2,10);
+    const clone = (o) => JSON.parse(JSON.stringify(o));
+
+    function saveSoon() {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      }, 200); // debounced save
+    }
+
+    function loadOnce() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) state = JSON.parse(raw);
+      } catch {}
+      if (!state || !Array.isArray(state.items)) state = { items: [], version: 1 };
+    }
+
+    // Find helpers: returns { node, parent, list, index } or null
+    function findNode(id, list = state.items, parent = null) {
+      for (let i = 0; i < list.length; i++) {
+        const n = list[i];
+        if (n.id === id) return { node: n, parent, list, index: i };
+        if (n.children && n.children.length) {
+          const r = findNode(id, n.children, n);
+          if (r) return r;
+        }
+      }
+      return null;
+    }
+
+    function removeById(id) {
+      const rec = findNode(id);
+      if (!rec) return null;
+      rec.list.splice(rec.index, 1);
+      return rec.node;
+    }
+
+    function insertAt(list, index, node) {
+      list.splice(index, 0, node);
+    }
+
+    // ---------- Mutations ----------
+    function newItem(title='New item') {
+      return { id: uid(), title, collapsed: false, children: [] };
+    }
+
+    function addRoot(title) {
+      state.items.push(newItem(title));
+      saveSoon(); render();
+    }
+
+    function addChild(parentId, title='New item') {
+      const rec = findNode(parentId);
+      if (!rec) return;
+      rec.node.children.push(newItem(title));
+      rec.node.collapsed = false; // ensure visible
+      saveSoon(); render();
+    }
+
+    function setTitle(id, text) {
+      const rec = findNode(id);
+      if (!rec) return;
+      const t = text.trim();
+      if (t) rec.node.title = t;
+      saveSoon();
+    }
+
+    function toggleCollapsed(id) {
+      const rec = findNode(id);
+      if (!rec) return;
+      rec.node.collapsed = !rec.node.collapsed;
+      saveSoon(); render();
+    }
+
+    function expandAll() {
+      (function walk(list){ list.forEach(n => { n.collapsed = false; walk(n.children||[]); }); })(state.items);
+      saveSoon(); render();
+    }
+
+    function collapseAll() {
+      (function walk(list){ list.forEach(n => { n.collapsed = true; walk(n.children||[]); }); })(state.items);
+      saveSoon(); render();
+    }
+
+    function deleteItem(id) {
+      const rec = findNode(id);
+      if (!rec) return;
+      const hasKids = rec.node.children && rec.node.children.length > 0;
+      if (hasKids && !confirm('Delete this item and ALL its sub-items?')) return;
+      removeById(id);
+      saveSoon(); render();
+    }
+
+    // ---------- Drag & Drop (the heart of your flow) ----------
+    // Behavior:
+    // - Drag an item:
+    //   • Drop ON another item row  → becomes last child of that item.
+    //   • Drop on "above" line      → becomes sibling above target.
+    //   • Drop on "below" line      → becomes sibling below target.
+    let dragId = null;
+
+    function onDragStart(e, id) {
+      dragId = id;
+      e.dataTransfer.effectAllowed = 'move';
+      // Some browsers require data to be set to enable drag
+      e.dataTransfer.setData('text/plain', id);
+      e.currentTarget.classList.add('drag-ghost');
+    }
+    function onDragEnd(e) {
+      e.currentTarget.classList.remove('drag-ghost');
+      clearDropHints();
+      dragId = null;
+    }
+
+    function clearDropHints() {
+      document.querySelectorAll('.drop-line').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.item-row').forEach(el => el.classList.remove('drop-on'));
+    }
+
+    // Sibling zones (above/below):
+    function onDragOverLine(e) {
+      if (!dragId) return;
+      e.preventDefault(); // allow drop
+      const line = e.currentTarget;
+      clearDropHints();
+      line.classList.add('active');
+    }
+    function onDropLine(e, targetId, where) {
+      e.preventDefault();
+      if (!dragId || dragId === targetId) return;
+      clearDropHints();
+
+      const src = findNode(dragId);
+      const dst = findNode(targetId);
+      if (!src || !dst) return;
+
+      // Prevent dropping into itself/its subtree as sibling (handled safely by removal+insert)
+      // Remove source from its list
+      src.list.splice(src.index, 1);
+
+      const list = dst.list; // sibling list of the target
+      // target index might have shifted if same list and src.index < dst.index
+      let tIndex = list.findIndex(n => n.id === targetId);
+      if (where === 'below') tIndex += 1;
+
+      insertAt(list, tIndex, src.node);
+      saveSoon(); render();
+    }
+
+    // Drop ON row → child
+    function onDragOverRow(e) {
+      if (!dragId) return;
+      e.preventDefault();
+      const row = e.currentTarget;
+      clearDropHints();
+      row.classList.add('drop-on');
+    }
+    function onDropRow(e, targetId) {
+      e.preventDefault();
+      if (!dragId || dragId === targetId) return;
+      clearDropHints();
+
+      const src = findNode(dragId);
+      const dst = findNode(targetId);
+      if (!src || !dst) return;
+
+      // Disallow dropping a node onto its own descendant (would create a cycle)
+      if (isDescendant(dst.node, dragId)) return;
+
+      // Remove src from its current list
+      src.list.splice(src.index, 1);
+
+      // Append as last child of target
+      if (!dst.node.children) dst.node.children = [];
+      dst.node.children.push(src.node);
+      dst.node.collapsed = false; // ensure visible after move
+
+      saveSoon(); render();
+    }
+
+    function isDescendant(node, id) {
+      if (!node.children || !node.children.length) return false;
+      for (const c of node.children) {
+        if (c.id === id) return true;
+        if (isDescendant(c, id)) return true;
+      }
+      return false;
+    }
+
+    // ---------- Render ----------
+    function render() {
+      $tree.innerHTML = '';
+      state.items.forEach(n => $tree.appendChild(renderNode(n)));
+    }
+
+    function renderNode(node) {
+      const $li = $tpl.content.firstElementChild.cloneNode(true);
+      $li.dataset.id = node.id;
+
+      const $lineAbove = $li.querySelector('[data-zone="above"]');
+      const $lineBelow = $li.querySelector('[data-zone="below"]');
+      const $row = $li.querySelector('.item-row');
+      const $chev = $li.querySelector('.chev');
+      const $title = $li.querySelector('.title');
+      const $add = $li.querySelector('.add');
+      const $del = $li.querySelector('.del');
+      const $children = $li.querySelector('.children');
+
+      if (node.collapsed) $li.classList.add('collapsed');
+      $title.textContent = node.title;
+
+      // Inline edit: Enter to save, blur to save
+      $title.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); $title.blur(); }
+      });
+      $title.addEventListener('blur', () => setTitle(node.id, $title.textContent));
+
+      // Actions
+      $chev.addEventListener('click', () => toggleCollapsed(node.id));
+      $add.addEventListener('click', () => addChild(node.id));
+      $del.addEventListener('click', () => deleteItem(node.id));
+
+      // Drag source
+      $li.addEventListener('dragstart', (e) => onDragStart(e, node.id));
+      $li.addEventListener('dragend', onDragEnd);
+
+      // Drop targets:
+      // 1) Sibling zones
+      $lineAbove.addEventListener('dragover', onDragOverLine);
+      $lineBelow.addEventListener('dragover', onDragOverLine);
+      $lineAbove.addEventListener('drop', (e) => onDropLine(e, node.id, 'above'));
+      $lineBelow.addEventListener('drop', (e) => onDropLine(e, node.id, 'below'));
+
+      // 2) ON row → become child
+      $row.addEventListener('dragover', onDragOverRow);
+      $row.addEventListener('drop', (e) => onDropRow(e, node.id));
+
+      // Children
+      if (node.children && node.children.length) {
+        node.children.forEach(c => $children.appendChild(renderNode(c)));
+      }
+
+      return $li;
+    }
+
+    // ---------- Init & header controls ----------
+    function init() {
+      loadOnce();
+      render();
+
+      $rootInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const v = $rootInput.value.trim();
+          if (v) { addRoot(v); $rootInput.value=''; }
+        }
+      });
+      $rootAdd.addEventListener('click', () => {
+        const v = $rootInput.value.trim();
+        if (v) { addRoot(v); $rootInput.value=''; }
+      });
+
+      $expandAll.addEventListener('click', expandAll);
+      $collapseAll.addEventListener('click', collapseAll);
+
+      $reset.addEventListener('click', () => {
+        if (confirm('Clear all items and start fresh?')) {
+          localStorage.removeItem(STORAGE_KEY);
+          state = { items: [], version: 1 };
+          render();
+        }
+      });
+    }
+
+    init();
+  </script>
 </body>
 </html>
 
