@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doney - The Ultimate To-Do List</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="logo">
+                <div class="bumblebee">🐝</div>
+                <h1>Doney</h1>
+            </div>
+            <p class="tagline">Nest your tasks, conquer your world</p>
+        </header>
+
+        <main class="main">
+            <div class="toolbar">
+                <button class="btn btn-primary" id="addRootItem">
+                    <span>+</span> Add Item
+                </button>
+                <button class="btn btn-secondary" id="clearAll">
+                    Clear All
+                </button>
+            </div>
+
+            <div class="items-container" id="itemsContainer">
+                <!-- Items will be dynamically added here -->
+            </div>
+        </main>
+
+        <footer class="footer">
+            <p>Built with ❤️ by the Doney team</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+
