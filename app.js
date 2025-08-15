@@ -1,26 +1,33 @@
+// Single-source-of-truth state container
+const state = {
+    byId: new Map(),            // id -> item
+    childrenByParent: new Map(), // parentId|null -> [childIds]
+    rootIds: [],                // convenience for parentId = null
+    loaded: false
+};
+
+// Debounced save wrapper
+let saveTimeout = null;
+const debouncedSave = (fn, delay = 200) => {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(fn, delay);
+};
+
 class DoneyApp {
     constructor() {
-        // Tiny in-memory store object
-        this.store = {
-            byId: new Map(), // Map<string, Item>
-            childrenByParent: new Map(), // Map<parentId, ItemId[]>
-            rootIds: [] // string[]
-        };
-        
         this.draggedItem = null;
         this.dragOverItem = null;
         this.dragOverPosition = null;
-        this.saveTimeout = null;
         
         this.init();
     }
 
     init() {
         console.log('Initializing Doney app...');
-        this.loadFromStorage();
+        this.loadState();
         console.log('Loaded from storage:', { 
-            rootIds: this.store.rootIds.length, 
-            totalItems: this.store.byId.size 
+            rootIds: state.rootIds.length, 
+            totalItems: state.byId.size 
         });
         this.setupEventListeners();
         this.render();
@@ -37,8 +44,8 @@ class DoneyApp {
         document.addEventListener('dragend', () => this.handleDragEnd());
     }
 
-    // Data store functions
-    loadFromStorage() {
+    // Hydration (one place only)
+    loadState() {
         const data = localStorage.getItem('doney-data');
         if (data) {
             try {
@@ -51,72 +58,77 @@ class DoneyApp {
         } else {
             this.rebuildIndexesFromArray([]);
         }
+        state.loaded = true;
     }
 
-    saveToStorage() {
-        // Debounce saves (~200ms)
-        if (this.saveTimeout) {
-            clearTimeout(this.saveTimeout);
-        }
-        
-        this.saveTimeout = setTimeout(() => {
+    // Index builder (pure)
+    rebuildIndexesFromArray(itemsArray) {
+        // Clear all indexes
+        state.byId.clear();
+        state.childrenByParent.clear();
+        state.rootIds = [];
+
+        // Insert each item into byId
+        itemsArray.forEach(item => {
+            state.byId.set(item.id, item);
+        });
+
+        // Build childrenByParent index
+        itemsArray.forEach(item => {
+            const parentId = item.parentId || null;
+            if (!state.childrenByParent.has(parentId)) {
+                state.childrenByParent.set(parentId, []);
+            }
+            state.childrenByParent.get(parentId).push(item.id);
+        });
+
+        // Sort each childrenByParent array by order
+        state.childrenByParent.forEach((childIds, parentId) => {
+            childIds.sort((a, b) => {
+                const itemA = state.byId.get(a);
+                const itemB = state.byId.get(b);
+                return (itemA.order || 0) - (itemB.order || 0);
+            });
+        });
+
+        // Set rootIds
+        state.rootIds = state.childrenByParent.get(null) || [];
+    }
+
+    // Saving (debounced)
+    saveState() {
+        debouncedSave(() => {
             const data = {
-                items: this.getVisibleLinearOrder()
+                items: Array.from(state.byId.values())
             };
             localStorage.setItem('doney-data', JSON.stringify(data));
             console.log('Saved to storage:', data.items.length, 'items');
-        }, 200);
-    }
-
-    rebuildIndexesFromArray(items) {
-        this.store.byId.clear();
-        this.store.childrenByParent.clear();
-        this.store.rootIds = [];
-
-        items.forEach(item => {
-            this.store.byId.set(item.id, item);
-            
-            if (item.parentId === null) {
-                this.store.rootIds.push(item.id);
-            } else {
-                if (!this.store.childrenByParent.has(item.parentId)) {
-                    this.store.childrenByParent.set(item.parentId, []);
-                }
-                this.store.childrenByParent.get(item.parentId).push(item.id);
-            }
         });
     }
 
-    getVisibleLinearOrder() {
-        const result = [];
-        
-        const processParent = (parentId) => {
-            const children = this.store.childrenByParent.get(parentId) || [];
-            children.forEach(childId => {
-                const child = this.store.byId.get(childId);
-                if (child) {
-                    result.push(child);
-                    if (!child.collapsed) {
-                        processParent(childId);
-                    }
-                }
-            });
-        };
-
-        // Process root items
-        this.store.rootIds.forEach(rootId => {
-            const root = this.store.byId.get(rootId);
-            if (root) {
-                result.push(root);
-                if (!root.collapsed) {
-                    processParent(rootId);
-                }
-            }
-        });
-
-        return result;
+    // Getters (no storage!)
+    getAllItems() {
+        return Array.from(state.byId.values());
     }
 
+    getItemById(id) {
+        return state.byId.get(id);
+    }
+
+    getChildren(parentId) {
+        return state.childrenByParent.get(parentId) || [];
+    }
+
+    // Helper to ensure bucket exists
+    ensureBucket(parentId) {
+        const parentKey = parentId || null;
+        if (!state.childrenByParent.has(parentKey)) {
+            state.childrenByParent.set(parentKey, []);
+        }
+        return state.childrenByParent.get(parentKey);
+    }
+
+    // Add Item flow
     addItem({ parentId, text }) {
         if (!text || !text.trim()) return;
 
@@ -127,33 +139,39 @@ class DoneyApp {
             text: text.trim(),
             completed: false,
             collapsed: false,
+            parentId: parentId,
+            order: this.getNextOrder(parentId),
+            createdAt: Date.now(),
             updatedAt: Date.now()
         };
 
-        // Add to store
-        this.store.byId.set(newItem.id, newItem);
+        // Add to state
+        state.byId.set(newItem.id, newItem);
 
         if (parentId === null) {
             // Root item
-            this.store.rootIds.push(newItem.id);
+            state.rootIds.push(newItem.id);
             console.log(`Added root item ${newItem.id}`);
         } else {
             // Sub-item
-            if (!this.store.childrenByParent.has(parentId)) {
-                this.store.childrenByParent.set(parentId, []);
-            }
-            this.store.childrenByParent.get(parentId).push(newItem.id);
+            const bucket = this.ensureBucket(parentId);
+            bucket.push(newItem.id);
             console.log(`Added sub-item ${newItem.id} to parent ${parentId}`);
         }
 
         console.log('New item created:', newItem);
-        console.log('Current store state:', {
-            rootIds: this.store.rootIds.length,
-            totalItems: this.store.byId.size
+        console.log('Current state:', {
+            rootIds: state.rootIds.length,
+            totalItems: state.byId.size
         });
         
-        this.saveToStorage();
+        this.saveState();
         this.render();
+    }
+
+    getNextOrder(parentId) {
+        const bucket = this.ensureBucket(parentId);
+        return bucket.length;
     }
 
     // Composer functions
@@ -206,20 +224,12 @@ class DoneyApp {
     }
 
     // Item management functions
-    getItemById(id) {
-        return this.store.byId.get(id);
-    }
-
-    getChildren(parentId) {
-        return this.store.childrenByParent.get(parentId) || [];
-    }
-
     toggleItem(id) {
         const item = this.getItemById(id);
         if (item) {
             item.completed = !item.completed;
             item.updatedAt = Date.now();
-            this.saveToStorage();
+            this.saveState();
             this.render();
         }
     }
@@ -229,7 +239,7 @@ class DoneyApp {
         if (item) {
             item.collapsed = !item.collapsed;
             item.updatedAt = Date.now();
-            this.saveToStorage();
+            this.saveState();
             this.render();
         }
     }
@@ -240,11 +250,11 @@ class DoneyApp {
 
         // Remove from parent's children array
         if (item.parentId === null) {
-            this.store.rootIds = this.store.rootIds.filter(rootId => rootId !== id);
+            state.rootIds = state.rootIds.filter(rootId => rootId !== id);
         } else {
-            const parentChildren = this.store.childrenByParent.get(item.parentId);
+            const parentChildren = state.childrenByParent.get(item.parentId);
             if (parentChildren) {
-                this.store.childrenByParent.set(item.parentId, 
+                state.childrenByParent.set(item.parentId, 
                     parentChildren.filter(childId => childId !== id)
                 );
             }
@@ -253,7 +263,7 @@ class DoneyApp {
         // Recursively delete all children
         this.deleteItemRecursive(id);
         
-        this.saveToStorage();
+        this.saveState();
         this.render();
     }
 
@@ -261,12 +271,13 @@ class DoneyApp {
         const item = this.getItemById(id);
         if (!item) return;
 
-        item.children.forEach(childId => {
+        const children = this.getChildren(id);
+        children.forEach(childId => {
             this.deleteItemRecursive(childId);
         });
 
-        // Remove from store
-        this.store.byId.delete(id);
+        // Remove from state
+        state.byId.delete(id);
     }
 
     // Inline editing
@@ -296,7 +307,7 @@ class DoneyApp {
             if (newText && newText !== originalText) {
                 item.text = newText;
                 item.updatedAt = Date.now();
-                this.saveToStorage();
+                this.saveState();
                 this.render();
             } else {
                 textElement.textContent = originalText;
@@ -327,19 +338,19 @@ class DoneyApp {
 
     clearAll() {
         if (confirm('Are you sure you want to clear all items? This cannot be undone.')) {
-            this.store.byId.clear();
-            this.store.childrenByParent.clear();
-            this.store.rootIds = [];
-            this.saveToStorage();
+            state.byId.clear();
+            state.childrenByParent.clear();
+            state.rootIds = [];
+            this.saveState();
             this.render();
         }
     }
 
-    // Rendering
+    // Rendering (no storage reads!)
     render() {
-        console.log('Rendering app with store:', {
-            rootIds: this.store.rootIds.length,
-            totalItems: this.store.byId.size
+        console.log('Rendering app with state:', {
+            rootIds: state.rootIds.length,
+            totalItems: state.byId.size
         });
         
         const container = document.getElementById('itemsContainer');
@@ -350,7 +361,7 @@ class DoneyApp {
         
         container.innerHTML = '';
 
-        if (this.store.rootIds.length === 0) {
+        if (state.rootIds.length === 0) {
             container.innerHTML = `
                 <div class="empty-state">
                     <p>No items yet. Click "Add Item" to get started!</p>
@@ -360,7 +371,7 @@ class DoneyApp {
             return;
         }
 
-        this.store.rootIds.forEach(itemId => {
+        state.rootIds.forEach(itemId => {
             const itemElement = this.renderItem(itemId);
             container.appendChild(itemElement);
         });
@@ -480,6 +491,9 @@ if (!localStorage.getItem('doney-data')) {
                 text: "Welcome to Doney! 🐝",
                 completed: false,
                 collapsed: false,
+                parentId: null,
+                order: 0,
+                createdAt: Date.now(),
                 updatedAt: Date.now()
             },
             {
@@ -487,6 +501,9 @@ if (!localStorage.getItem('doney-data')) {
                 text: "This is your ultimate to-do list",
                 completed: false,
                 collapsed: false,
+                parentId: null,
+                order: 1,
+                createdAt: Date.now(),
                 updatedAt: Date.now()
             }
         ]

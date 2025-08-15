@@ -127,3 +127,15 @@ The current MVP focuses on core functionality. These features are planned for th
 - **Debounced Persistence**: 200ms debounced localStorage saves for performance
 - **Pure Functions**: `getVisibleLinearOrder()` provides clean data without side effects
 
+## 📊 Data Flow
+
+**Hydrate once → in-memory state → debounced save**
+
+The app follows a strict single-source-of-truth pattern:
+1. **Startup**: `loadState()` reads from localStorage once and builds in-memory indexes
+2. **Runtime**: All operations work with in-memory state only
+3. **Persistence**: Changes trigger debounced saves (~200ms) to localStorage
+4. **Render**: UI rendering never reads from storage - only uses in-memory state
+
+**Storage reads never occur during render or item processing**, ensuring optimal performance and preventing stack overflow errors.
+
