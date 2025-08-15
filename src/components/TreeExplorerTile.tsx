@@ -378,8 +378,6 @@ function TreeExplorer({
         <div className="flex items-center space-x-2 py-2" style={{ paddingLeft: `${0 * 12}px` }}>
           {/* Tile drag handle */}
           <button 
-            {...(tileHandleAttributes||{})} 
-            {...(tileHandleListeners||{})} 
             className="w-4 h-4 cursor-grab text-zinc-400 hover:text-zinc-600" 
             aria-label="Reorder goal tile" 
             onMouseDown={(e)=>e.stopPropagation()} 
@@ -396,8 +394,12 @@ function TreeExplorer({
             className="w-4 h-4 text-primary-500 border-zinc-300 rounded focus:ring-primary-300 focus:ring-2 dark:border-zinc-600"
           />
           
-          {/* Title with inline edit */}
-          <div className="flex-1 min-w-0">
+          {/* Title with inline edit - DRAG HANDLE */}
+          <div 
+            className="flex-1 min-w-0 cursor-grab"
+            {...(tileHandleAttributes||{})} 
+            {...(tileHandleListeners||{})}
+          >
             <InlineEdit
               value={rootItem.title}
               onSave={(newTitle) => onUpdateItem(rootItem.id, { title: newTitle })}
@@ -406,9 +408,12 @@ function TreeExplorer({
             />
           </div>
           
-          {/* Big + button */}
+          {/* Big + button - NO DRAG LISTENERS */}
           <button
-            onClick={() => openComposerFor(rootItem.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              openComposerFor(rootItem.id);
+            }}
             className="w-9 h-9 flex items-center justify-center rounded-lg bg-primary-500 hover:bg-primary-600 text-white font-medium text-lg shadow-sm hover:shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
             aria-label="Add to-do"
             title="Add to-do"
