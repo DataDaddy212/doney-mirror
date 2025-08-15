@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { TodoItem, getChildren, computeLevel, isDescendant } from '@/utils/treeUtils'
+import { TodoItem, getChildren, computeLevel, isDescendant, getDescendants, moveItem } from '@/utils/treeUtils'
 import { DndContext, DragEndEvent, DragStartEvent, DragOverEvent, PointerSensor, useSensor, useSensors, useDraggable, useDroppable, DragOverlay } from '@dnd-kit/core'
 import { createPortal } from 'react-dom'
 import Composer from './Composer'
@@ -14,6 +14,14 @@ function RowPreview({ title }: { title: string }) {
       {title}
     </div>
   )
+}
+
+// Utility to parse drop target strings
+function parseDropTarget(t: string) {
+  if (!t) return { toParentId: null, toIndex: 0 }
+  if (t.startsWith('into:')) return { toParentId: t.split(':')[1] || null, toIndex: 1e9 } // append
+  if (t.startsWith('between:')) { const [,p,i] = t.split(':'); return { toParentId: p||null, toIndex: Number(i)||0 } }
+  return { toParentId: null, toIndex: 0 }
 }
 
 interface TreeExplorerTileProps {
@@ -35,6 +43,8 @@ interface TreeExplorerTileProps {
   tileHandleAttributes?: any
   tileHandleListeners?: any
   tileIsDragging?: boolean
+  // Direct state update for treeUtils.moveItem
+  setItems: (updater: (prev: TodoItem[]) => TodoItem[]) => void
 }
 
 export default function TreeExplorerTile({ 
@@ -53,7 +63,8 @@ export default function TreeExplorerTile({
   onDraftChange,
   tileHandleAttributes,
   tileHandleListeners,
-  tileIsDragging
+  tileIsDragging,
+  setItems
 }: TreeExplorerTileProps) {
   const isBrowser = typeof document !== 'undefined'
   const sensors = useSensors(useSensor(PointerSensor))
@@ -78,26 +89,35 @@ export default function TreeExplorerTile({
   const handleDragEnd = (e: DragEndEvent) => {
     const o = e.over?.id ? String(e.over.id) : null
     if (activeId) {
-      console.log('[DnD] end', { activeId, activeTitle: labelFor(activeId), overId: o })
+      console.log('[DnD] end', { activeId, activeTitle: activeId ? labelFor(activeId) : 'unknown', overId: o })
       if (o && o.includes('::')) {
         const [targetId, zone] = o.split('::') as [string, 'before'|'after'|'into']
         if (zone === 'into') {
+          // Drop INTO a parent - use treeUtils.moveItem with cycle guard
           if (isDescendant(targetId, activeId, allItems)) {
             console.warn('[DnD] blocked: cannot drop into own descendant')
           } else {
-            onReparent(activeId, targetId, 'end')
+            setItems(prev => moveItem(activeId, targetId, 1e9, prev)) // append to end
           }
         } else {
+          // Drop BEFORE/AFTER - handle reordering and reparenting
           const target = allItems.find(i => i.id === targetId)
           const moving = allItems.find(i => i.id === activeId)
           if (target && moving) {
             const sibs = getChildren(target.parentId || '', allItems)
             const tIdx = sibs.findIndex(s => s.id === targetId)
             const newIdx = zone === 'before' ? tIdx : tIdx + 1
+            
             if (moving.parentId === target.parentId) {
+              // Same parent - just reorder
               onReorder(activeId, newIdx)
             } else {
-              onReparent(activeId, target.parentId || null, newIdx)
+              // Different parent - reparent with cycle guard
+              if (isDescendant(target.parentId || '', activeId, allItems)) {
+                console.warn('[DnD] blocked: cannot drop into own descendant')
+              } else {
+                setItems(prev => moveItem(activeId, target.parentId || null, newIdx, prev))
+              }
             }
           }
         }

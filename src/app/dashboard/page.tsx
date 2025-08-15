@@ -13,7 +13,8 @@ import {
   reparent,
   reorderWithinParent,
   reorderRoots,
-  isDescendant
+  isDescendant,
+  moveItem
 } from '@/utils/treeUtils'
 import { DndContext, PointerSensor, useSensor, useSensors, DragStartEvent, DragOverEvent, DragEndEvent, DragOverlay, useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
@@ -112,7 +113,7 @@ export default function Dashboard() {
       const activeGoalId = a.replace('tile::','')
       const targetGoalId = o.replace('tile::','').replace('::into','')
       if (activeGoalId === targetGoalId) { setActiveId(null); return }
-      if (isDescendant(targetGoalId, activeGoalId, items)) {
+      if (getDescendants(activeGoalId, items).some(d => d.id === targetGoalId)) {
         console.warn('[FEED DnD] blocked: cannot drop tile into its own descendant')
         setActiveId(null)
         return
@@ -120,7 +121,7 @@ export default function Dashboard() {
       setPrevItemsForUndo(items)
       const activeTitle = items.find(i => i.id === activeGoalId)?.title || activeGoalId
       const targetTitle = items.find(i => i.id === targetGoalId)?.title || targetGoalId
-      setItems(prev => reparent(activeGoalId, targetGoalId, prev, 'end'))
+      setItems(prev => moveItem(activeGoalId, targetGoalId, 1e9, prev)) // append to end
       setLastMoveMessage(`Moved "${activeTitle}" under "${targetTitle}" — Undo`)
       console.log('[FEED DnD] reparent into tile', { activeGoalId, targetGoalId, action: 'demote goal' })
       setActiveId(null)
@@ -148,7 +149,7 @@ export default function Dashboard() {
     // Child node cross-goal reparent into tile body
     if (!a.startsWith('tile::') && o.startsWith('tile::') && o.includes('::into')) {
       const targetGoalId = o.replace('tile::','').replace('::into','')
-      if (isDescendant(targetGoalId, a, items)) {
+      if (getDescendants(a, items).some(d => d.id === targetGoalId)) {
         console.warn('[FEED DnD] blocked: cannot drop node into its own descendant')
         setActiveId(null)
         return
@@ -156,7 +157,7 @@ export default function Dashboard() {
       setPrevItemsForUndo(items)
       const activeTitle = items.find(i => i.id === a)?.title || a
       const targetTitle = items.find(i => i.id === targetGoalId)?.title || targetGoalId
-      setItems(prev => reparent(a, targetGoalId, prev, 'end'))
+      setItems(prev => moveItem(a, targetGoalId, 1e9, prev)) // append to end
       setLastMoveMessage(`Moved "${activeTitle}" under "${targetTitle}" — Undo`)
       console.log('[FEED DnD] reparent child into tile', { nodeId: a, targetGoalId, action: 'reparent child' })
       setActiveId(null)
@@ -166,7 +167,7 @@ export default function Dashboard() {
     if (!a.startsWith('tile::') && o === 'feed::root') {
       setPrevItemsForUndo(items)
       const activeTitle = items.find(i => i.id === a)?.title || a
-      setItems(prev => reparent(a, null, prev, 'end'))
+      setItems(prev => moveItem(a, null, 1e9, prev)) // append to end
       setLastMoveMessage(`Promoted "${activeTitle}" to root — Undo`)
       console.log('[FEED DnD] promote to root', { nodeId: a, action: 'promote to root' })
       setActiveId(null)
@@ -502,6 +503,8 @@ export default function Dashboard() {
                             tileHandleAttributes={attributes}
                             tileHandleListeners={listeners}
                             tileIsDragging={isDragging}
+                            // Direct state update for treeUtils.moveItem
+                            setItems={setItems}
                           />
                         </TileInto>
                       </div>

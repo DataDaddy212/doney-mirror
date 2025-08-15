@@ -223,18 +223,49 @@ export function getValidParents(itemId: string, items: TodoItem[]): TodoItem[] {
 }
 
 /**
- * Move an item to a new parent
+ * Move an item to a new parent and position
  */
-export function moveItem(itemId: string, newParentId: string | null, items: TodoItem[]): TodoItem[] {
-  if (newParentId && wouldCreateCycle(newParentId, itemId, items)) {
+export function moveItem(
+  itemId: string, 
+  toParentId: string | null, 
+  toIndex: number, 
+  items: TodoItem[]
+): TodoItem[] {
+  // Guard cycles: no parent -> descendant
+  if (toParentId && getDescendants(itemId, items).some(d => d.id === toParentId)) {
     return items // Don't move if it would create a cycle
   }
   
-  return items.map(item => 
+  // First update the parent
+  let updatedItems = items.map(item => 
     item.id === itemId 
-      ? { ...item, parentId: newParentId }
+      ? { ...item, parentId: toParentId, updatedAt: Date.now() }
       : item
   )
+  
+  // Then handle positioning within the new parent
+  if (toParentId !== null) {
+    // Get siblings in the new parent
+    const siblings = getSiblings(toParentId, updatedItems)
+    const targetIds = siblings.filter(s => s.id !== itemId).map(s => s.id)
+    
+    // Insert at the specified index
+    const boundedIndex = Math.max(0, Math.min(toIndex, targetIds.length))
+    targetIds.splice(boundedIndex, 0, itemId)
+    
+    // Create order map and resort
+    const orderMap = new Map<string, number>(targetIds.map((id, i) => [id, i]))
+    updatedItems.sort((a, b) => {
+      const aIs = a.parentId === toParentId && orderMap.has(a.id)
+      const bIs = b.parentId === toParentId && orderMap.has(b.id)
+      if (aIs && bIs) return (orderMap.get(a.id)! - orderMap.get(b.id)!)
+      if (aIs) return -1
+      if (bIs) return 1
+      return 0
+    })
+  }
+  
+  return updatedItems
 }
 
 /**
